@@ -279,7 +279,7 @@ class WorkerClient:
             logger.info(f"Encoding settings: CRF={settings['crf']}, Opus={settings['opus_bitrate']}k")
             
             # Transcode with progress callback
-            self.report_progress(file_id, 10)
+            self.report_progress(file_id, 0)  # Start at 0%
             temp_output = self._transcode(temp_input, metadata, settings, file_id)
             
             if not temp_output or not temp_output.exists():
