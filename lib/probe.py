@@ -82,10 +82,10 @@ class MediaProbe:
         pix_fmt = stream.get('pix_fmt', '')
         bitdepth = 10 if '10' in pix_fmt else 8
         
-        # Detect HDR
+        # Detect HDR (enhanced detection with dynamic HDR support)
         color_transfer = stream.get('color_transfer', '')
         color_space = stream.get('color_space', '')
-        hdr = MediaProbe._detect_hdr(color_transfer, color_space, stream)
+        hdr_info = MediaProbe._detect_hdr(color_transfer, color_space, stream)
         
         return {
             'codec': codec,
@@ -94,7 +94,10 @@ class MediaProbe:
             'height': height,
             'resolution': resolution,
             'bitdepth': bitdepth,
-            'hdr': hdr,
+            'hdr': hdr_info['type'],  # 'SDR', 'HDR10', 'HDR10+', 'Dolby Vision'
+            'hdr_dynamic': hdr_info['dynamic'],  # True for HDR10+/Dolby Vision
+            'color_transfer': hdr_info['color_transfer'],
+            'color_space': hdr_info['color_space'],
             'fps': MediaProbe._get_fps(stream),
             'pix_fmt': pix_fmt
         }
@@ -164,20 +167,51 @@ class MediaProbe:
     
     @staticmethod
     def _detect_hdr(color_transfer, color_space, stream):
-        """Detect if content is HDR or SDR"""
+        """
+        Detect HDR type and dynamic metadata.
+        Returns dict with HDR information.
+        """
         hdr_transfers = ['smpte2084', 'arib-std-b67', 'smpte428']
         hdr_spaces = ['bt2020nc', 'bt2020c']
         
-        if color_transfer in hdr_transfers or color_space in hdr_spaces:
-            return 'HDR'
+        hdr_type = 'SDR'
+        has_dynamic_metadata = False
         
-        # Check for HDR metadata
+        # Check color transfer and space for basic HDR
+        if color_transfer in hdr_transfers or color_space in hdr_spaces:
+            hdr_type = 'HDR10'  # Base HDR (static)
+        
+        # Check for side data metadata
         side_data = stream.get('side_data_list', [])
         for data in side_data:
-            if 'Mastering display' in data.get('side_data_type', ''):
-                return 'HDR'
+            data_type = data.get('side_data_type', '')
+            
+            # Static HDR10 mastering display metadata
+            if 'Mastering display' in data_type:
+                if hdr_type == 'SDR':
+                    hdr_type = 'HDR10'
+            
+            # Content light level metadata
+            if 'Content light level' in data_type:
+                if hdr_type == 'SDR':
+                    hdr_type = 'HDR10'
+            
+            # Dynamic HDR10+ metadata (SMPTE ST 2094-40)
+            if 'HDR Dynamic Metadata SMPTE2094-40' in data_type or 'SMPTE2094-40' in data_type:
+                hdr_type = 'HDR10+'
+                has_dynamic_metadata = True
+            
+            # Dolby Vision configuration record
+            if 'DOVI configuration record' in data_type or 'Dolby Vision' in data_type:
+                hdr_type = 'Dolby Vision'
+                has_dynamic_metadata = True
         
-        return 'SDR'
+        return {
+            'type': hdr_type,
+            'dynamic': has_dynamic_metadata,
+            'color_transfer': color_transfer,
+            'color_space': color_space
+        }
     
     @staticmethod
     def _get_fps(stream):

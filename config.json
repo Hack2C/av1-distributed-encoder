@@ -21,7 +21,12 @@
     "audio_codec": "libopus",
     "copy_subtitles": true,
     "copy_metadata": true,
-    "container": "mkv"
+    "container": "mkv",
+    "hdr_handling": {
+      "skip_dolby_vision": true,
+      "skip_hdr10_plus": true,
+      "preserve_hdr10": true
+    }
   },
   "advanced": {
     "max_concurrent_probes": 5,

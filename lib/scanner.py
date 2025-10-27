@@ -101,6 +101,9 @@ class MediaScanner:
                         file_info['source_resolution'] = video.get('resolution')
                         file_info['source_bitdepth'] = video.get('bitdepth')
                         file_info['source_hdr'] = video.get('hdr')
+                        file_info['hdr_dynamic'] = video.get('hdr_dynamic')
+                        file_info['color_transfer'] = video.get('color_transfer')
+                        file_info['color_space'] = video.get('color_space')
                         
                         if metadata.get('audio') and len(metadata['audio']) > 0:
                             audio = metadata['audio'][0]

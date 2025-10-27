@@ -39,6 +39,9 @@ class Database:
                     source_resolution TEXT,
                     source_bitdepth INTEGER,
                     source_hdr TEXT,
+                    hdr_dynamic BOOLEAN DEFAULT 0,
+                    color_transfer TEXT,
+                    color_space TEXT,
                     source_audio_codec TEXT,
                     source_audio_channels INTEGER,
                     source_audio_bitrate INTEGER,
@@ -129,6 +132,18 @@ class Database:
             if 'processing_speed_fps' not in columns:
                 cursor.execute("ALTER TABLE files ADD COLUMN processing_speed_fps REAL")
                 logger.info("Added processing_speed_fps column")
+            
+            if 'hdr_dynamic' not in columns:
+                cursor.execute("ALTER TABLE files ADD COLUMN hdr_dynamic BOOLEAN DEFAULT 0")
+                logger.info("Added hdr_dynamic column")
+            
+            if 'color_transfer' not in columns:
+                cursor.execute("ALTER TABLE files ADD COLUMN color_transfer TEXT")
+                logger.info("Added color_transfer column")
+            
+            if 'color_space' not in columns:
+                cursor.execute("ALTER TABLE files ADD COLUMN color_space TEXT")
+                logger.info("Added color_space column")
                 
         except Exception as e:
             logger.warning(f"Migration warning: {e}")
@@ -180,7 +195,8 @@ class Database:
                 # Optional metadata fields
                 optional_fields = [
                     'source_codec', 'source_bitrate', 'source_resolution',
-                    'source_bitdepth', 'source_hdr', 'source_audio_codec',
+                    'source_bitdepth', 'source_hdr', 'hdr_dynamic', 
+                    'color_transfer', 'color_space', 'source_audio_codec',
                     'source_audio_channels', 'source_audio_bitrate'
                 ]
                 

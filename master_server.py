@@ -316,10 +316,12 @@ def api_file_result_upload(file_id):
         # Get file info
         file_info = database.get_file_by_id(file_id)
         if not file_info:
+            logger.error(f"File {file_id} not found in database")
             return jsonify({'success': False, 'error': 'File not found'}), 404
         
         # Check if file was uploaded
         if 'file' not in request.files:
+            logger.error(f"No file provided in upload request for file {file_id}")
             return jsonify({'success': False, 'error': 'No file provided'}), 400
         
         uploaded_file = request.files['file']
@@ -331,23 +333,36 @@ def api_file_result_upload(file_id):
         temp_dir = Path(config.get_temp_directory())
         temp_dir.mkdir(parents=True, exist_ok=True)
         temp_output = temp_dir / f"{original_path.stem}_result{original_path.suffix}"
-        uploaded_file.save(temp_output)
+        
+        logger.info(f"Saving uploaded file to: {temp_output}")
+        uploaded_file.save(str(temp_output))
         
         # Get file sizes for statistics
-        original_size = original_path.stat().st_size
+        # Use size from database for original (file may not be accessible from master)
+        original_size = file_info.get('size_bytes', 0)
         new_size = temp_output.stat().st_size
         
+        logger.info(f"Original size: {original_size}, New size: {new_size}")
+        
+        # Ensure target directory exists and is writable
+        original_path.parent.mkdir(parents=True, exist_ok=True)
+        
         # Replace original file
-        if config.testing_mode:
+        if config.is_testing_mode():
             backup_path = original_path.with_suffix(original_path.suffix + '.bak')
             if backup_path.exists():
+                logger.info(f"Removing old backup: {backup_path}")
                 backup_path.unlink()
-            original_path.rename(backup_path)
-            logger.info(f"Backup created: {backup_path}")
+            if original_path.exists():
+                original_path.rename(backup_path)
+                logger.info(f"Backup created: {backup_path}")
         else:
-            original_path.unlink()
+            if original_path.exists():
+                logger.info(f"Removing original file: {original_path}")
+                original_path.unlink()
         
         # Move result to original location
+        logger.info(f"Moving {temp_output} to {original_path}")
         temp_output.rename(original_path)
         logger.info(f"File replaced: {original_path}")
         
@@ -365,7 +380,7 @@ def api_file_result_upload(file_id):
         })
     
     except Exception as e:
-        logger.error(f"Error receiving file result: {e}", exc_info=True)
+        logger.error(f"Error receiving file result for file {file_id}: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # Job Control Endpoints

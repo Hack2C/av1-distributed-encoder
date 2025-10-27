@@ -130,6 +130,31 @@ class TranscodingEngine:
             
             logger.info(f"Metadata: {metadata}")
             
+            # Step 5.5: Check for dynamic HDR that cannot be preserved
+            video = metadata['video']
+            hdr_type = video.get('hdr', 'SDR')
+            has_dynamic_hdr = video.get('hdr_dynamic', False)
+            
+            if has_dynamic_hdr and hdr_type in ['HDR10+', 'Dolby Vision']:
+                logger.warning(f"Skipping {file_path}: Contains {hdr_type} with dynamic metadata")
+                logger.warning(f"Dynamic HDR metadata cannot be preserved in AV1 - would harm perceptive quality")
+                
+                error_msg = f"Skipped: {hdr_type} dynamic metadata cannot be preserved (quality protection)"
+                self.db.skip_file(file_id)
+                self.db.update_file_error(file_id, error_msg)
+                
+                self._emit_progress('skipped', {
+                    'file': str(file_path),
+                    'reason': error_msg,
+                    'hdr_type': hdr_type
+                })
+                return
+            
+            # Log HDR10 static metadata (can be preserved)
+            if hdr_type == 'HDR10':
+                logger.info(f"Processing HDR10 content: {file_path}")
+                logger.info(f"Static HDR10 metadata will be preserved (transfer: {video.get('color_transfer')}, space: {video.get('color_space')})")
+            
             # Step 6: Determine optimal settings
             settings = self._determine_settings(metadata)
             logger.info(f"Encoding settings: CRF={settings['crf']}, Opus={settings['opus_bitrate']}k")
@@ -332,11 +357,26 @@ class TranscodingEngine:
             '-crf', str(settings['crf']),
         ]
         
-        # Handle HDR metadata if present
-        if metadata['video']['hdr'] == 'HDR':
+        # Enhanced HDR10 handling
+        video = metadata['video']
+        hdr_type = video.get('hdr', 'SDR')
+        
+        if hdr_type == 'HDR10':
+            # Preserve color space and transfer characteristics
+            color_transfer = video.get('color_transfer', 'smpte2084')
+            color_space = video.get('color_space', 'bt2020nc')
+            
             cmd.extend([
-                '-svtav1-params', 'enable-hdr=1'
+                '-color_primaries', 'bt2020',
+                '-color_trc', color_transfer if color_transfer in ['smpte2084', 'arib-std-b67'] else 'smpte2084',
+                '-colorspace', color_space if 'bt2020' in color_space else 'bt2020nc',
             ])
+            
+            # Enable HDR in SVT-AV1
+            svt_params = ['enable-hdr=1']
+            cmd.extend(['-svtav1-params', ':'.join(svt_params)])
+            
+            logger.info(f"HDR10 metadata preservation enabled (transfer={color_transfer}, space={color_space})")
         
         # Audio encoding - convert all to Opus
         cmd.extend([
