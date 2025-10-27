@@ -59,7 +59,7 @@ def init_components():
     config = Config()
     logger.info("Configuration loaded from config.json")
     
-    database = Database(config)
+    database = Database('transcoding.db')
     logger.info("Database initialized")
     
     scanner = MediaScanner(config, database)
