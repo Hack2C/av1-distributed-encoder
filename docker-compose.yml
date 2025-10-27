@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  av1-transcoder:
+    build: .
+    container_name: av1-transcoder
+    restart: unless-stopped
+    command: python3 transcode.py
+    ports:
+      - "8090:8090"
+    volumes:
+      # Mount your media directories here
+      - /home/wieczorek/av1/Movies:/media/Movies
+      - /home/wieczorek/av1/TV:/media/TV
+      - /home/wieczorek/av1/TestLib:/media/TestLib
+      # Persistent data
+      - ./transcoding.db:/app/transcoding.db
+      - ./config.docker.json:/app/config.json:ro
+      - ./quality_lookup.json:/app/quality_lookup.json:ro
+      - ./audio_codec_lookup.json:/app/audio_codec_lookup.json:ro
+      # Temp directory for processing
+      - /tmp/av1_transcoding:/tmp/av1_transcoding
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - av1-network
+
+networks:
+  av1-network:
+    driver: bridge

@@ -1,0 +1,10 @@
+{
+  "media_directories": [
+    "/media/Movies",
+    "/media/TV",
+    "/media/TestLib"
+  ],
+  "temp_directory": "/tmp/av1_transcoding",
+  "testing_mode": true,
+  "web_port": 8090
+}

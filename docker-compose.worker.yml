@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  av1-worker:
+    build: .
+    container_name: av1-worker
+    restart: unless-stopped
+    command: python3 worker_client.py http://MASTER_IP:8090
+    volumes:
+      # Mount your media directories here (Windows paths example)
+      # Edit these to match your Windows setup:
+      - D:/Movies:/media/Movies
+      - D:/TV:/media/TV
+      # Config files
+      - ./config.docker.json:/app/config.json:ro
+      - ./quality_lookup.json:/app/quality_lookup.json:ro
+      - ./audio_codec_lookup.json:/app/audio_codec_lookup.json:ro
+      # Temp directory for processing
+      - av1-temp:/tmp/av1_transcoding
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Optional: Override master URL here instead of in command
+      # - MASTER_URL=http://192.168.1.100:8090
+    networks:
+      - av1-network
+
+volumes:
+  av1-temp:
+
+networks:
+  av1-network:
+    driver: bridge

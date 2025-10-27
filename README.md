@@ -21,21 +21,43 @@ Automated media library transcoding to AV1 (SVT-AV1) with Opus audio. Supports b
 
 ## Quick Start
 
-### Standalone Mode (Single Computer)
+### Docker (Recommended - Works on Windows, Linux, Mac)
+
+**Master Server (Linux):**
+```bash
+docker-compose -f docker-compose.master.yml up -d
+# Access at http://localhost:8090
+```
+
+**Worker (Windows/Linux/Mac):**
+1. Install Docker Desktop
+2. Edit `docker-compose.worker.yml`:
+   - Set media paths (e.g., `D:/Movies:/media/Movies`)
+   - Change `MASTER_IP` to your master server's IP
+3. Run:
+```bash
+docker-compose -f docker-compose.worker.yml up -d
+```
+
+Or on Windows, double-click `start-worker.bat`
+
+### Native Python (Linux/Mac)
+
+**Standalone Mode:**
 ```bash
 python3 transcode.py
 # Access at http://localhost:8090
 ```
 
-### Distributed Mode (Multiple Computers)
+**Distributed Mode:**
 
-**On Master Server:**
+Master Server:
 ```bash
 ./start_master.sh
 # Access at http://localhost:8090
 ```
 
-**On Worker Computers:**
+Worker:
 ```bash
 ./start_worker.sh http://MASTER_IP:8090
 ```
@@ -44,7 +66,66 @@ Replace `MASTER_IP` with your master server's IP address.
 
 ## Installation
 
-### System Dependencies
+### Docker (Recommended)
+
+**Prerequisites:**
+- Docker Desktop (Windows/Mac) or Docker Engine (Linux)
+- Access to media files (local or network share)
+
+**Setup:**
+
+1. **Clone/Download this repository**
+
+2. **For Master Server (Linux):**
+   ```bash
+   # Edit docker-compose.master.yml - set your media paths
+   nano docker-compose.master.yml
+   
+   # Build and start
+   docker-compose -f docker-compose.master.yml up -d
+   
+   # View logs
+   docker-compose -f docker-compose.master.yml logs -f
+   ```
+
+3. **For Worker (Windows):**
+   ```powershell
+   # Edit docker-compose.worker.yml
+   # - Set media paths: D:/Movies:/media/Movies
+   # - Set MASTER_IP in command line
+   notepad docker-compose.worker.yml
+   
+   # Run
+   docker-compose -f docker-compose.worker.yml up -d
+   
+   # Or double-click start-worker.bat
+   ```
+
+**Docker Configuration:**
+
+The Docker setup uses `config.docker.json` with container paths:
+```json
+{
+  "media_directories": [
+    "/media/Movies",
+    "/media/TV"
+  ],
+  "temp_directory": "/tmp/av1_transcoding",
+  "testing_mode": true,
+  "web_port": 8090
+}
+```
+
+You map your actual media directories in `docker-compose.yml`:
+```yaml
+volumes:
+  - /your/actual/Movies:/media/Movies
+  - D:/TV:/media/TV  # Windows example
+```
+
+### Native Python (Linux/Mac)
+
+**System Dependencies:**
 ```bash
 # Ubuntu/Debian
 sudo apt-get update
@@ -54,12 +135,12 @@ sudo apt-get install -y ffmpeg python3 python3-pip
 ffmpeg -encoders | grep -E "libsvtav1|libopus"
 ```
 
-### Python Dependencies
+**Python Dependencies:**
 ```bash
 pip3 install -r requirements.txt
 ```
 
-### Configuration
+**Configuration:**
 
 Edit `config.json`:
 ```json
