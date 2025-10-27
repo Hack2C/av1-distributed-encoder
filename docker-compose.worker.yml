@@ -30,6 +30,11 @@ services:
       - TEMP_DIR=/tmp/av1_transcoding
       - TESTING_MODE=${TESTING_MODE:-true}
       
+      # FILE DISTRIBUTION MODE - Worker receives files from master via HTTP
+      - FILE_DISTRIBUTION_MODE=true
+      
+      # User/Group IDs for file ownership
+      
       # SMB/CIFS Share Configuration (optional)
       # Uncomment and configure these to mount network shares
       - SMB_HOST=${SMB_HOST:-}
