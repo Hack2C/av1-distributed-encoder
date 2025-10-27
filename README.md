@@ -1,118 +1,233 @@
-# 🎬 AV1 Distributed Transcoding System
+# AV1 Distributed Transcoding System# 🎬 AV1 Distributed Transcoding System
 
-High-performance distributed media transcoding system that converts your entire library to AV1 (SVT-AV1) with Opus audio. Features modern web interface, smart quality optimization, and distributed processing across multiple machines.
 
-## ✨ Features
 
-### Core Capabilities
-- ✅ **AV1 Encoding** - SVT-AV1 with configurable presets (0-13)
-- ✅ **Opus Audio** - High-quality audio with excellent compression
-- ✅ **Smart Quality** - Automatic CRF/bitrate based on source resolution and codec
-- ✅ **Modern Web UI** - Real-time monitoring with detailed progress tracking
-- ✅ **Safe Processing** - Testing mode, backups, atomic file operations
-- ✅ **Efficient** - Only replaces files with 5%+ space savings
+A distributed video transcoding system that converts video files to AV1 format using SVT-AV1 encoder across multiple worker machines.High-performance distributed media transcoding system that converts your entire library to AV1 (SVT-AV1) with Opus audio. Features modern web interface, smart quality optimization, and distributed processing across multiple machines.
 
-### Distributed Processing
+
+
+## Features## ✨ Features
+
+
+
+- **Distributed Processing**: Master/worker architecture for parallel transcoding### Core Capabilities
+
+- **File Distribution Mode**: Workers download files via HTTP (no shared storage needed)- ✅ **AV1 Encoding** - SVT-AV1 with configurable presets (0-13)
+
+- **HDR Support**: Automatically detects and preserves HDR10 metadata, skips dynamic HDR (HDR10+, Dolby Vision)- ✅ **Opus Audio** - High-quality audio with excellent compression
+
+- **Quality-Based Encoding**: Automatic CRF selection based on resolution- ✅ **Smart Quality** - Automatic CRF/bitrate based on source resolution and codec
+
+- **Web Interface**: Real-time monitoring with progress tracking- ✅ **Modern Web UI** - Real-time monitoring with detailed progress tracking
+
+- **Docker-Based**: Easy deployment with Docker Compose- ✅ **Safe Processing** - Testing mode, backups, atomic file operations
+
+- **GitHub Actions CI/CD**: Automated builds to GitHub Container Registry- ✅ **Efficient** - Only replaces files with 5%+ space savings
+
+
+
+## Quick Start### Distributed Processing
+
 - ✅ **Master/Worker Architecture** - Coordinate jobs across multiple computers
-- ✅ **Auto Job Distribution** - Workers request jobs when idle
+
+### 1. Master Server + Local Worker (Linux)- ✅ **Auto Job Distribution** - Workers request jobs when idle
+
 - ✅ **Real-time Monitoring** - Single unified web interface
-- ✅ **Health Monitoring** - Auto-detect and recover from worker failures
-- ✅ **Linear Scaling** - Add workers for proportional speedup
-- ✅ **File Distribution Mode** - HTTP-based transfers (no shared storage needed)
+
+```bash- ✅ **Health Monitoring** - Auto-detect and recover from worker failures
+
+# Clone the repository- ✅ **Linear Scaling** - Add workers for proportional speedup
+
+git clone https://github.com/Hack2C/av1-distributed-encoder.git- ✅ **File Distribution Mode** - HTTP-based transfers (no shared storage needed)
+
+cd av1-distributed-encoder
 
 ### Advanced Features
-- ✅ **Job Controls** - Cancel, retry, skip, delete operations
-- ✅ **Detailed Tracking** - Resolution, codec, bitrate, worker assignment
+
+# Start master + 1 local worker- ✅ **Job Controls** - Cancel, retry, skip, delete operations
+
+docker compose -f docker-compose.test.yml up -d- ✅ **Detailed Tracking** - Resolution, codec, bitrate, worker assignment
+
 - ✅ **Time Estimates** - Per-file and overall ETA with processing speed
-- ✅ **Process Priority** - Configurable nice/ionice for background operation
-- ✅ **HDR Support** - Automatic detection and preservation
-- ✅ **Multi-track** - Preserves all audio tracks, subtitles, and metadata
 
-## 🚀 Quick Start
+# Access web interface- ✅ **Process Priority** - Configurable nice/ionice for background operation
 
-### Docker (Recommended)
+http://localhost:8090- ✅ **HDR Support** - Automatic detection and preservation
 
-**Master Server:**
-```bash
-# Create config directory
+```- ✅ **Multi-track** - Preserves all audio tracks, subtitles, and metadata
+
+
+
+### 2. Windows Worker## 🚀 Quick Start
+
+
+
+Edit `docker-compose.windows-worker.yml` and replace `MASTER_IP_HERE` with your master server IP:### Docker (Recommended)
+
+
+
+```yaml**Master Server:**
+
+command: python3 worker_client.py http://192.168.1.100:8090```bash
+
+```# Create config directory
+
 mkdir -p master-data/config
 
+Then start the worker:
+
 # Start master
-docker compose -f docker-compose.master.yml up -d
 
-# Access web UI
+```bashdocker compose -f docker-compose.master.yml up -d
+
+docker compose -f docker-compose.windows-worker.yml up -d
+
+```# Access web UI
+
 open http://localhost:8090
-```
 
-**Worker Node:**
-```bash
-# Copy worker config
+## Architecture```
+
+
+
+- **Master Server**: Coordinates jobs, serves web UI, provides file downloads**Worker Node:**
+
+- **Workers**: Process transcoding jobs, download files from master, upload results```bash
+
+- **File Distribution**: HTTP-based file transfer (no NFS/SMB required)# Copy worker config
+
 cp docker-compose.worker.yml docker-compose.worker-1.yml
 
+## Configuration
+
 # Edit configuration (set MASTER_URL and media paths)
-nano docker-compose.worker-1.yml
 
-# Start worker
-docker compose -f docker-compose.worker-1.yml up -d
-```
+### Quality Lookup (`quality_lookup.json`)nano docker-compose.worker-1.yml
 
-### Native Python
+
+
+Defines CRF values based on resolution:# Start worker
+
+- 4K (2160p): CRF 24docker compose -f docker-compose.worker-1.yml up -d
+
+- 1440p: CRF 25```
+
+- 1080p: CRF 26
+
+- 720p: CRF 27### Native Python
+
+- 480p: CRF 28
 
 **Standalone Mode:**
-```bash
-# Install dependencies
-pip3 install -r requirements.txt
 
-# Edit config.json
+### Audio Codec (`audio_codec_lookup.json`)```bash
+
+# Install dependencies
+
+Defines Opus bitrates for different source audio formats.pip3 install -r requirements.txt
+
+
+
+### Environment Variables# Edit config.json
+
 nano config.json
 
-# Run
-python3 transcode.py
-```
+#### Master
+
+- `MEDIA_DIRS`: Comma-separated list of media directories# Run
+
+- `TESTING_MODE`: Creates `.bak` backups instead of deleting originalspython3 transcode.py
+
+- `SVT_AV1_PRESET`: Encoder preset (0=slowest/best, 13=fastest/worst)```
+
+- `PUID/PGID`: User/Group ID for file ownership (default: 1000)
 
 **Distributed Mode:**
-```bash
-# Master
-./start_master.sh
 
-# Worker
+#### Worker```bash
+
+- `FILE_DISTRIBUTION_MODE=true`: Enable file download mode# Master
+
+- `MEDIA_DIRS`: Leave empty for file distribution mode./start_master.sh
+
+- `SVT_AV1_PRESET`: Encoder preset
+
+- `PUID/PGID`: User/Group ID for file ownership (default: 1000)# Worker
+
 ./start_worker.sh http://MASTER_IP:8090
-```
 
-## 📦 Installation
+## HDR Handling```
 
-### Prerequisites
+
+
+The system automatically:## 📦 Installation
+
+- **Preserves HDR10** (static metadata): Transcoded with proper color transfer and primaries
+
+- **Skips HDR10+**: Dynamic metadata cannot be preserved, file is skipped### Prerequisites
+
+- **Skips Dolby Vision**: Dynamic metadata cannot be preserved, file is skipped
 
 **Docker Method:**
-- Docker Desktop (Windows/Mac) or Docker Engine (Linux)
+
+## Docker Compose Files- Docker Desktop (Windows/Mac) or Docker Engine (Linux)
+
 - Access to media files (local or network share)
 
-**Native Method:**
-- Python 3.12+
-- FFmpeg with libsvtav1 and libopus support
+- `docker-compose.test.yml`: Master + 1 local worker for testing
 
-### Configuration
+- `docker-compose.master.yml`: Master server only**Native Method:**
 
-**Environment Variables:**
-```bash
-# Application
-MEDIA_DIRS=/media/Movies,/media/TV        # Media directories (comma-separated)
-TEMP_DIR=/tmp/av1_transcoding             # Temporary processing directory
+- `docker-compose.worker.yml`: Local worker only  - Python 3.12+
+
+- `docker-compose.windows-worker.yml`: Windows worker using GHCR image- FFmpeg with libsvtav1 and libopus support
+
+
+
+## Monitoring### Configuration
+
+
+
+Web interface (http://localhost:8090) provides:**Environment Variables:**
+
+- Overall statistics (files processed, savings)```bash
+
+- Worker status and performance# Application
+
+- File queue with progress trackingMEDIA_DIRS=/media/Movies,/media/TV        # Media directories (comma-separated)
+
+- Real-time updates via WebSocketsTEMP_DIR=/tmp/av1_transcoding             # Temporary processing directory
+
 WEB_PORT=8090                              # Web interface port
-TESTING_MODE=true                          # Keep backup files for verification
 
-# Master Connection (Workers Only)
+## File OwnershipTESTING_MODE=true                          # Keep backup files for verification
+
+
+
+Files are created with the user/group specified by `PUID` and `PGID` (default: 1000:1000).# Master Connection (Workers Only)
+
 MASTER_URL=http://192.168.1.100:8090      # Master server URL
 
-# Encoding Settings
-SVT_AV1_PRESET=8                          # 0-13 (0=slowest/best, 8=balanced, 13=fastest)
+## Temp Directory Cleanup
 
-# Process Priority
-NICE_LEVEL=19                              # CPU priority (0-19, 19=lowest)
+# Encoding Settings
+
+Workers automatically:SVT_AV1_PRESET=8                          # 0-13 (0=slowest/best, 8=balanced, 13=fastest)
+
+- Clean temp directory on startup
+
+- Clean temp files after each job (success or failure)# Process Priority
+
+- Remove abandoned files from crashes/restartsNICE_LEVEL=19                              # CPU priority (0-19, 19=lowest)
+
 IONICE_CLASS=3                             # I/O priority (1-3, 3=idle)
 
+## Repository
+
 # File Distribution (Optional)
-FILE_DISTRIBUTION_MODE=false               # true=HTTP transfer, false=shared storage
+
+https://github.com/Hack2C/av1-distributed-encoderFILE_DISTRIBUTION_MODE=false               # true=HTTP transfer, false=shared storage
+
 
 # Network Shares (Optional)
 SMB_HOST=192.168.1.10                      # NAS hostname/IP

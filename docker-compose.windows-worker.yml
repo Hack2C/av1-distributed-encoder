@@ -1,66 +1,28 @@
 version: '3.8'
 
-# Windows Desktop Worker Configuration
-# Connects to master using file distribution mode
-# 
-# IMPORTANT: Replace MASTER_IP_HERE with your master server IP address
-#
-# Prerequisites:
-# - Docker Desktop installed on Windows
-# - Network access to master server
-#
-# Usage:
-#   docker-compose -f docker-compose.windows-worker.yml up -d
-#
-# Scale workers:
-#   docker-compose -f docker-compose.windows-worker.yml up -d --scale worker=4
-
 services:
-  # Windows Worker - File Distribution Mode
   worker:
     image: ghcr.io/hack2c/av1-distributed-encoder:latest
+    container_name: av1-worker-windows
     restart: unless-stopped
     command: python3 worker_client.py http://MASTER_IP_HERE:8090
-    
-    # Windows paths - adjust as needed
     volumes:
-      # Config directory (optional, will be created)
       - ./worker-data:/data
-      
-      # Temp directory for transcoding
-      - ./worker-temp:/tmp/av1_transcoding
-    
+      - worker-temp:/tmp/av1_transcoding
     environment:
-      # Python
       - PYTHONUNBUFFERED=1
-      
-      # User/Group - Windows Docker Desktop usually runs as root, but these are safe defaults
+      - MEDIA_DIRS=
+      - FILE_DISTRIBUTION_MODE=true
+      - TEMP_DIR=/tmp/av1_transcoding
+      - TESTING_MODE=true
+      - SVT_AV1_PRESET=0
       - PUID=1000
       - PGID=1000
-      
-      # Master Connection
-      - MASTER_URL=http://MASTER_IP_HERE:8090
-      
-      # Application Configuration
-      - TEMP_DIR=/tmp/av1_transcoding
-      - CONFIG_DIR=/data/config
-      
-      # FILE DISTRIBUTION MODE - Worker receives files from master via HTTP
-      - FILE_DISTRIBUTION_MODE=true
-      
-      # Encoding Settings - PRESET 0 (Slowest/Highest Quality)
-      - SVT_AV1_PRESET=0
-    
-    # Resource limits (adjust based on your PC)
-    deploy:
-      resources:
-        limits:
-          cpus: '0'  # No limit - use all available
-          memory: 8G  # Adjust based on your RAM
-        reservations:
-          cpus: '4'
-          memory: 4G
-    
-    # Network mode - use host network if having connectivity issues
-    # Uncomment if you can't reach the master
-    # network_mode: "host"
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    privileged: true
+
+volumes:
+  worker-temp:
