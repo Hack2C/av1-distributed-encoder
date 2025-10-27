@@ -1,0 +1,33 @@
+{
+  "source_directories": [
+    "/home/wieczorek/av1/Movies",
+    "/home/wieczorek/av1/TV",
+    "/home/wieczorek/av1/TestLib"
+  ],
+  "temp_directory": "/tmp/av1_transcoding",
+  "testing_mode": true,
+  "process_priority": {
+    "nice": 19,
+    "ionice_class": 3
+  },
+  "web_server": {
+    "host": "0.0.0.0",
+    "port": 8090
+  },
+  "video_extensions": [".mkv", ".mp4", ".avi", ".mov", ".m4v", ".ts"],
+  "transcoding": {
+    "video_codec": "libsvtav1",
+    "svt_av1_preset": 0,
+    "audio_codec": "libopus",
+    "copy_subtitles": true,
+    "copy_metadata": true,
+    "container": "mkv"
+  },
+  "advanced": {
+    "max_concurrent_probes": 5,
+    "verify_before_replace": true,
+    "keep_backup_days": 7,
+    "resume_incomplete": true,
+    "nas_timeout_seconds": 30
+  }
+}

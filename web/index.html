@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AV1 Transcoding Service</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎬 AV1 Transcoding Service</h1>
+            <div class="header-info">
+                <span id="service-status" class="status-badge">●</span>
+                <span id="testing-mode"></span>
+            </div>
+        </header>
+
+        <!-- Statistics Dashboard -->
+        <section class="dashboard">
+            <div class="stat-card">
+                <h3>Total Files</h3>
+                <div class="stat-value" id="total-files">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Completed</h3>
+                <div class="stat-value" id="completed-files">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Pending</h3>
+                <div class="stat-value" id="pending-files">0</div>
+            </div>
+            <div class="stat-card">
+                <h3>Failed</h3>
+                <div class="stat-value" id="failed-files">0</div>
+            </div>
+        </section>
+
+        <!-- Disk Space Savings -->
+        <section class="savings">
+            <h2>💾 Disk Space Savings</h2>
+            <div class="savings-grid">
+                <div class="savings-item">
+                    <label>Original Size:</label>
+                    <span id="original-size">0 GB</span>
+                </div>
+                <div class="savings-item">
+                    <label>Current Size:</label>
+                    <span id="current-size">0 GB</span>
+                </div>
+                <div class="savings-item">
+                    <label>Saved:</label>
+                    <span id="saved-size" class="highlight">0 GB (0%)</span>
+                </div>
+                <div class="savings-item">
+                    <label>Estimated Total Savings:</label>
+                    <span id="estimated-savings">0 GB (0%)</span>
+                </div>
+                <div class="savings-item full-width">
+                    <label>Estimated Final Size:</label>
+                    <span id="estimated-final-size">0 GB</span>
+                </div>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="overall-progress"></div>
+            </div>
+        </section>
+
+        <!-- Current File -->
+        <section class="current-file" id="current-file-section" style="display: none;">
+            <h2>⚙️ Currently Processing</h2>
+            <div class="file-info">
+                <div class="file-name" id="current-file-name">-</div>
+                <div class="file-directory" id="current-file-directory" style="font-size: 0.9em; color: #888; margin-top: 4px;">-</div>
+                <div class="file-details">
+                    <span id="current-file-codec">-</span> → AV1 |
+                    <span id="current-file-resolution">-</span> |
+                    CRF <span id="current-file-crf">-</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="current-file-progress"></div>
+                    <div class="progress-text" id="current-file-percent">0%</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Controls -->
+        <section class="controls">
+            <button id="btn-pause" class="btn btn-warning">Pause</button>
+            <button id="btn-resume" class="btn btn-success" disabled>Resume</button>
+            <button id="btn-scan" class="btn btn-primary">Rescan Library</button>
+        </section>
+
+        <!-- File List -->
+        <section class="file-list">
+            <h2>📋 File Queue</h2>
+            <div class="filters">
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="pending">Pending</button>
+                <button class="filter-btn" data-filter="processing">Processing</button>
+                <button class="filter-btn" data-filter="completed">Completed</button>
+                <button class="filter-btn" data-filter="failed">Failed</button>
+            </div>
+            <div class="bulk-actions" id="bulk-actions" style="display: none;">
+                <button id="btn-reset-failed" class="btn btn-warning">🔄 Reset All Failed to Pending</button>
+                <button id="btn-delete-completed" class="btn btn-danger">🗑️ Remove Completed</button>
+            </div>
+            <div class="table-container">
+                <table id="files-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>File</th>
+                            <th>Directory</th>
+                            <th>Resolution</th>
+                            <th>Source Codec</th>
+                            <th>Original Size</th>
+                            <th>New Size</th>
+                            <th>Savings</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="files-tbody">
+                        <tr>
+                            <td colspan="9" class="loading">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <footer>
+            <p>AV1 Transcoding Service • Last updated: <span id="last-update">-</span></p>
+        </footer>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

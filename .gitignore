@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Database
+transcoding.db
+*.db
+*.db-journal
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+.DS_Store
+
+# Media directories (don't track actual media files)
+Movies/
+TV/
+TestLib/
+
+# Temp transcoding directory
+/tmp/av1_transcoding/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+*.cover
+htmlcov/
