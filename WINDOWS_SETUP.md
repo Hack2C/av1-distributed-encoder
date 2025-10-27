@@ -5,7 +5,7 @@ This guide helps you set up AV1 encoding workers on Windows Desktop using Docker
 ## Prerequisites
 
 1. **Docker Desktop for Windows** - Install from https://www.docker.com/products/docker-desktop/
-2. **Network access** to the master server at `192.168.178.182:8090`
+2. **Network access** to the master server (replace `YOUR_MASTER_IP` with actual IP address)
 
 ## Quick Start
 
@@ -13,7 +13,20 @@ This guide helps you set up AV1 encoding workers on Windows Desktop using Docker
 
 Download `docker-compose.windows-worker.yml` from this repository.
 
-### 2. Start the worker
+### 2. Edit the configuration
+
+Open `docker-compose.windows-worker.yml` and replace `MASTER_IP_HERE` with your master server's IP address:
+
+```yaml
+command: python3 worker_client.py http://YOUR_MASTER_IP:8090
+```
+
+And also in the environment section:
+```yaml
+- MASTER_URL=http://YOUR_MASTER_IP:8090
+```
+
+### 3. Start the worker
 
 Open PowerShell or Command Prompt in the folder containing the file:
 
@@ -31,8 +44,12 @@ docker-compose -f docker-compose.windows-worker.yml up -d --scale worker=4
 # View logs
 docker-compose -f docker-compose.windows-worker.yml logs -f
 
+```powershell
 # Check if workers are connected
-# Open browser to: http://192.168.178.182:8090
+# Open browser to: http://YOUR_MASTER_IP:8090
+```
+
+### 4. Stop workers
 ```
 
 ### 4. Stop workers
@@ -43,7 +60,9 @@ docker-compose -f docker-compose.windows-worker.yml down
 
 ## Configuration
 
-The worker connects to the master at `192.168.178.182:8090` using **file distribution mode** - files are transferred via HTTP, no shared storage needed.
+The worker connects to the master using **file distribution mode** - files are transferred via HTTP, no shared storage needed.
+
+**Important:** Make sure to replace `MASTER_IP_HERE` with your actual master server IP address in the docker-compose file before starting.
 
 ### Encoding Quality
 
@@ -103,7 +122,7 @@ docker-compose -f docker-compose.windows-worker.yml logs worker
 ## Master Server
 
 The master server dashboard is available at:
-**http://192.168.178.182:8090**
+**http://YOUR_MASTER_IP:8090** (replace with your master server's IP)
 
 You can monitor:
 - Worker status

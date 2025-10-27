@@ -1,8 +1,10 @@
 version: '3.8'
 
 # Windows Desktop Worker Configuration
-# Connects to master at 192.168.178.182:8090 using file distribution mode
+# Connects to master using file distribution mode
 # 
+# IMPORTANT: Replace MASTER_IP_HERE with your master server IP address
+#
 # Prerequisites:
 # - Docker Desktop installed on Windows
 # - Network access to master server
@@ -18,7 +20,7 @@ services:
   worker:
     image: ghcr.io/hack2c/av1-distributed-encoder:latest
     restart: unless-stopped
-    command: python3 worker_client.py http://192.168.178.182:8090
+    command: python3 worker_client.py http://MASTER_IP_HERE:8090
     
     # Windows paths - adjust as needed
     volumes:
@@ -37,7 +39,7 @@ services:
       - PGID=1000
       
       # Master Connection
-      - MASTER_URL=http://192.168.178.182:8090
+      - MASTER_URL=http://MASTER_IP_HERE:8090
       
       # Application Configuration
       - TEMP_DIR=/tmp/av1_transcoding
