@@ -6,6 +6,27 @@ set -e
 
 echo "=== AV1 Transcoding - SMB Mount Script ==="
 
+# Set user/group permissions if PUID/PGID are provided
+if [ -n "$PUID" ] && [ -n "$PGID" ]; then
+    echo "Setting up user permissions (UID:$PUID, GID:$PGID)..."
+    
+    # Create group if it doesn't exist
+    if ! getent group transcoder > /dev/null 2>&1; then
+        groupadd -g "$PGID" transcoder
+    fi
+    
+    # Create user if it doesn't exist
+    if ! id -u transcoder > /dev/null 2>&1; then
+        useradd -u "$PUID" -g "$PGID" -m -s /bin/bash transcoder
+    fi
+    
+    # Change ownership of working directories
+    chown -R "$PUID:$PGID" /tmp/av1_transcoding 2>/dev/null || true
+    chown -R "$PUID:$PGID" /data 2>/dev/null || true
+    
+    echo "✓ User permissions configured"
+fi
+
 # Check if SMB shares are configured
 if [ -n "$SMB_SHARES" ]; then
     echo "Mounting multiple SMB shares..."
@@ -81,4 +102,9 @@ echo "=== Initializing configuration ==="
 python3 /app/init_config.py
 
 echo "=== Starting application ==="
-exec "$@"
+if [ -n "$PUID" ] && [ -n "$PGID" ]; then
+    echo "Running as user transcoder (UID:$PUID, GID:$PGID)"
+    exec gosu transcoder "$@"
+else
+    exec "$@"
+fi
