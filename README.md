@@ -78,7 +78,8 @@ Replace `MASTER_IP` with your master server's IP address.
 
 2. **For Master Server (Linux):**
    ```bash
-   # Edit docker-compose.master.yml - set your media paths
+   # Edit environment variables in docker-compose.master.yml
+   # Or create a .env file (recommended)
    nano docker-compose.master.yml
    
    # Build and start
@@ -88,39 +89,87 @@ Replace `MASTER_IP` with your master server's IP address.
    docker-compose -f docker-compose.master.yml logs -f
    ```
 
-3. **For Worker (Windows):**
-   ```powershell
-   # Edit docker-compose.worker.yml
-   # - Set media paths: D:/Movies:/media/Movies
-   # - Set MASTER_IP in command line
-   notepad docker-compose.worker.yml
+3. **For Worker (Windows/Linux):**
    
-   # Run
+   **Option A: Local Media Files**
+   ```bash
+   # Edit docker-compose.worker.yml to uncomment local volume mounts
+   # Set: - D:/Movies:/media/Movies
+   
+   # Create .env file
+   cp .env.worker.example .env
+   nano .env
+   # Set MASTER_URL=http://YOUR_LINUX_SERVER_IP:8090
+   
+   # Start worker
    docker-compose -f docker-compose.worker.yml up -d
+   ```
    
-   # Or double-click start-worker.bat
+   **Option B: SMB/CIFS Network Shares** (Recommended for NAS)
+   ```bash
+   # Create .env file from example
+   cp .env.worker.example .env
+   nano .env
+   
+   # Configure in .env:
+   MASTER_URL=http://192.168.1.100:8090
+   SMB_HOST=192.168.1.10
+   SMB_SHARE=Media
+   SMB_USERNAME=your_user
+   SMB_PASSWORD=your_password
+   MEDIA_DIRS=/media/Media/Movies,/media/Media/TV
+   
+   # Start worker
+   docker-compose -f docker-compose.worker.yml up -d
    ```
 
 **Docker Configuration:**
 
-The Docker setup uses `config.docker.json` with container paths:
-```json
-{
-  "media_directories": [
-    "/media/Movies",
-    "/media/TV"
-  ],
-  "temp_directory": "/tmp/av1_transcoding",
-  "testing_mode": true,
-  "web_port": 8090
-}
+Configuration is done via **environment variables** in `docker-compose.yml` or a `.env` file.
+
+**Core Environment Variables:**
+```bash
+# Application
+MEDIA_DIRS=/media/Movies,/media/TV          # Comma-separated media paths
+TEMP_DIR=/tmp/av1_transcoding               # Temp directory
+WEB_PORT=8090                                # Web interface port
+TESTING_MODE=true                            # Keep backup files
+
+# Master connection (workers only)
+MASTER_URL=http://192.168.1.100:8090        # Master server URL
+
+# Encoding
+SVT_AV1_PRESET=0                            # 0-13 (0=slowest/best)
+
+# Process priority
+NICE_LEVEL=19                                # 0-19 (19=lowest)
+IONICE_CLASS=3                               # 1-3 (3=idle)
 ```
 
-You map your actual media directories in `docker-compose.yml`:
-```yaml
-volumes:
-  - /your/actual/Movies:/media/Movies
-  - D:/TV:/media/TV  # Windows example
+**SMB/CIFS Network Share Variables:**
+```bash
+# Single share method
+SMB_HOST=192.168.1.10                        # NAS hostname/IP
+SMB_SHARE=Media                              # Share name
+SMB_USERNAME=user                            # Username
+SMB_PASSWORD=pass                            # Password
+SMB_DOMAIN=WORKGROUP                         # Domain (optional)
+SMB_VERSION=3.0                              # SMB version
+
+# Multiple shares method (alternative)
+# Format: [user:pass@]host/share/mountpoint
+SMB_SHARES=user:pass@nas1/Movies/media/Movies,user:pass@nas2/TV/media/TV
+```
+
+**Example .env file for Worker:**
+```bash
+MASTER_URL=http://192.168.1.100:8090
+SMB_HOST=192.168.1.10
+SMB_SHARE=Media
+SMB_USERNAME=mediauser
+SMB_PASSWORD=secret123
+MEDIA_DIRS=/media/Media/Movies,/media/Media/TV
+TESTING_MODE=true
 ```
 
 ### Native Python (Linux/Mac)

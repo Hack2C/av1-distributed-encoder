@@ -5,22 +5,47 @@ services:
     build: .
     container_name: av1-worker
     restart: unless-stopped
-    command: python3 worker_client.py http://MASTER_IP:8090
+    command: python3 worker_client.py ${MASTER_URL}
     volumes:
-      # Mount your media directories here (Windows paths example)
-      # Edit these to match your Windows setup:
-      - D:/Movies:/media/Movies
-      - D:/TV:/media/TV
+      # Local media directories (uncomment if using local paths)
+      # - D:/Movies:/media/Movies
+      # - D:/TV:/media/TV
+      
       # Config files
-      - ./config.docker.json:/app/config.json:ro
       - ./quality_lookup.json:/app/quality_lookup.json:ro
       - ./audio_codec_lookup.json:/app/audio_codec_lookup.json:ro
+      
       # Temp directory for processing
       - av1-temp:/tmp/av1_transcoding
     environment:
+      # Python
       - PYTHONUNBUFFERED=1
-      # Optional: Override master URL here instead of in command
-      # - MASTER_URL=http://192.168.1.100:8090
+      
+      # Master Server Connection
+      - MASTER_URL=${MASTER_URL:-http://192.168.1.100:8090}
+      
+      # Application Configuration
+      - MEDIA_DIRS=/media/Movies,/media/TV
+      - TEMP_DIR=/tmp/av1_transcoding
+      - TESTING_MODE=${TESTING_MODE:-true}
+      
+      # SMB/CIFS Share Configuration (optional)
+      # Uncomment and configure these to mount network shares
+      - SMB_HOST=${SMB_HOST:-}
+      - SMB_SHARE=${SMB_SHARE:-}
+      - SMB_USERNAME=${SMB_USERNAME:-}
+      - SMB_PASSWORD=${SMB_PASSWORD:-}
+      - SMB_DOMAIN=${SMB_DOMAIN:-WORKGROUP}
+      - SMB_VERSION=${SMB_VERSION:-3.0}
+      
+      # Optional: Multiple SMB shares (comma-separated)
+      # Format: host/share/mountpoint,host2/share2/mountpoint2
+      - SMB_SHARES=${SMB_SHARES:-}
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    privileged: true  # Required for CIFS mounting
     networks:
       - av1-network
 
