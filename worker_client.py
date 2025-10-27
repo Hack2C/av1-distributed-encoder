@@ -50,8 +50,40 @@ class WorkerClient:
         logger.info(f"Worker initialized: {self.hostname}")
         logger.info(f"Master server: {self.master_url}")
         
+        # Clean up temp directory from previous runs
+        self._cleanup_temp_directory()
+        
         # Fetch quality lookup from master or use local
         self.quality_lookup = self._init_quality_lookup()
+    
+    def _cleanup_temp_directory(self):
+        """Clean up temporary files from previous worker runs"""
+        try:
+            temp_dir = Path(self.config.get_temp_directory())
+            if temp_dir.exists():
+                logger.info(f"Cleaning up temp directory: {temp_dir}")
+                file_count = 0
+                for item in temp_dir.iterdir():
+                    try:
+                        if item.is_file():
+                            item.unlink()
+                            file_count += 1
+                        elif item.is_dir():
+                            import shutil
+                            shutil.rmtree(item)
+                            file_count += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to delete {item}: {e}")
+                
+                if file_count > 0:
+                    logger.info(f"Removed {file_count} items from temp directory")
+                else:
+                    logger.info("Temp directory is clean")
+            else:
+                logger.info(f"Creating temp directory: {temp_dir}")
+                temp_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Error cleaning temp directory: {e}", exc_info=True)
     
     def _init_quality_lookup(self):
         """Initialize quality lookup - fetch from master or use local config"""
@@ -340,11 +372,25 @@ class WorkerClient:
             # Cleanup temp files
             try:
                 if temp_input.exists():
+                    logger.debug(f"Removing temp input: {temp_input}")
                     temp_input.unlink()
                 if 'temp_output' in locals() and temp_output.exists():
+                    logger.debug(f"Removing temp output: {temp_output}")
                     temp_output.unlink()
-            except:
-                pass
+                
+                # Clean up any other files left in temp directory
+                temp_dir = Path(self.config.get_temp_directory())
+                if temp_dir.exists():
+                    for item in temp_dir.iterdir():
+                        try:
+                            # Only clean up files, not the directory itself
+                            if item.is_file():
+                                logger.debug(f"Removing leftover file: {item}")
+                                item.unlink()
+                        except Exception as cleanup_error:
+                            logger.warning(f"Failed to cleanup {item}: {cleanup_error}")
+            except Exception as e:
+                logger.warning(f"Error during cleanup: {e}")
     
     def _determine_settings(self, metadata):
         """Determine encoding settings based on metadata"""

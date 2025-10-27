@@ -5,7 +5,7 @@ services:
     build: .
     container_name: av1-worker
     restart: unless-stopped
-    command: python3 worker_client.py http://master:8090
+    command: python3 worker_client.py http://av1-master:8090
     volumes:
       # Local media directories (uncomment if using local paths)
       # - D:/Movies:/media/Movies
@@ -25,7 +25,8 @@ services:
       - MASTER_URL=${MASTER_URL:-http://192.168.1.100:8090}
       
       # Application Configuration
-      - MEDIA_DIRS=/media/Movies,/media/TV
+      # Leave MEDIA_DIRS empty for file distribution mode (download from master)
+      - MEDIA_DIRS=
       - TEMP_DIR=/tmp/av1_transcoding
       - TESTING_MODE=${TESTING_MODE:-true}
       
@@ -54,4 +55,5 @@ volumes:
 
 networks:
   av1-network:
-    driver: bridge
+    external: true
+    name: av1_av1-network
