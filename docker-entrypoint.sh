@@ -77,5 +77,8 @@ else
     echo "No SMB shares configured, skipping mount"
 fi
 
+echo "=== Initializing configuration ==="
+python3 /app/init_config.py
+
 echo "=== Starting application ==="
 exec "$@"

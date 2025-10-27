@@ -5,12 +5,13 @@ Master Server - Coordinates distributed transcoding across multiple workers
 
 import os
 import sys
+import json
 import signal
 import logging
 import threading
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_file
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
@@ -59,8 +60,9 @@ def init_components():
     config = Config()
     logger.info("Configuration loaded from config.json")
     
-    database = Database('transcoding.db')
-    logger.info("Database initialized")
+    db_path = os.environ.get('DB_PATH', '/data/transcoding.db')
+    database = Database(db_path)
+    logger.info(f"Database initialized at {db_path}")
     
     scanner = MediaScanner(config, database)
     
@@ -71,6 +73,11 @@ def init_components():
 @app.route('/')
 def index():
     """Serve main web interface"""
+    return app.send_static_file('master-new.html')
+
+@app.route('/old')
+def old_ui():
+    """Serve old web interface"""
     return app.send_static_file('master.html')
 
 @app.route('/api/status')
@@ -157,6 +164,50 @@ def api_worker_heartbeat(worker_id):
         logger.error(f"Error processing heartbeat: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/config/quality_lookup.json')
+def api_config_quality_lookup():
+    """Serve quality lookup JSON to workers"""
+    try:
+        config_dir = Path(os.environ.get('CONFIG_DIR', '/data/config'))
+        config_file = config_dir / 'quality_lookup.json'
+        
+        # Fallback to app directory if config doesn't exist
+        if not config_file.exists():
+            config_file = Path('/app/quality_lookup.json')
+        
+        if not config_file.exists():
+            return jsonify({'success': False, 'error': 'Config file not found'}), 404
+        
+        with open(config_file, 'r') as f:
+            data = json.load(f)
+        
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error serving quality_lookup.json: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/config/audio_codec_lookup.json')
+def api_config_audio_codec_lookup():
+    """Serve audio codec lookup JSON to workers"""
+    try:
+        config_dir = Path(os.environ.get('CONFIG_DIR', '/data/config'))
+        config_file = config_dir / 'audio_codec_lookup.json'
+        
+        # Fallback to app directory if config doesn't exist
+        if not config_file.exists():
+            config_file = Path('/app/audio_codec_lookup.json')
+        
+        if not config_file.exists():
+            return jsonify({'success': False, 'error': 'Config file not found'}), 404
+        
+        with open(config_file, 'r') as f:
+            data = json.load(f)
+        
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error serving audio_codec_lookup.json: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/worker/<worker_id>/job/request', methods=['GET'])
 def api_worker_request_job(worker_id):
     """Worker requests next job"""
@@ -228,6 +279,149 @@ def api_worker_job_failed(worker_id, file_id):
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Error marking job failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# File Distribution Mode Endpoints
+@app.route('/api/worker/<worker_id>/file/<int:file_id>/download', methods=['GET'])
+def api_worker_file_download(worker_id, file_id):
+    """Send file to worker for processing (file distribution mode)"""
+    try:
+        # Get file info from database
+        file_info = database.get_file_by_id(file_id)
+        if not file_info:
+            return jsonify({'success': False, 'error': 'File not found'}), 404
+        
+        file_path = Path(file_info['path'])
+        if not file_path.exists():
+            return jsonify({'success': False, 'error': 'File does not exist on disk'}), 404
+        
+        logger.info(f"Sending file {file_id} to worker {worker_id}: {file_path}")
+        
+        # Stream the file
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=file_path.name,
+            mimetype='application/octet-stream'
+        )
+    
+    except Exception as e:
+        logger.error(f"Error sending file to worker: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/file/<int:file_id>/result', methods=['POST'])
+def api_file_result_upload(file_id):
+    """Receive transcoded file from worker (file distribution mode)"""
+    try:
+        # Get file info
+        file_info = database.get_file_by_id(file_id)
+        if not file_info:
+            return jsonify({'success': False, 'error': 'File not found'}), 404
+        
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        
+        uploaded_file = request.files['file']
+        original_path = Path(file_info['path'])
+        
+        logger.info(f"Receiving transcoded file {file_id} for {original_path}")
+        
+        # Save to temp location first
+        temp_dir = Path(config.get_temp_directory())
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_output = temp_dir / f"{original_path.stem}_result{original_path.suffix}"
+        uploaded_file.save(temp_output)
+        
+        # Get file sizes for statistics
+        original_size = original_path.stat().st_size
+        new_size = temp_output.stat().st_size
+        
+        # Replace original file
+        if config.testing_mode:
+            backup_path = original_path.with_suffix(original_path.suffix + '.bak')
+            if backup_path.exists():
+                backup_path.unlink()
+            original_path.rename(backup_path)
+            logger.info(f"Backup created: {backup_path}")
+        else:
+            original_path.unlink()
+        
+        # Move result to original location
+        temp_output.rename(original_path)
+        logger.info(f"File replaced: {original_path}")
+        
+        # Calculate savings
+        savings_mb = (original_size - new_size) / 1_000_000
+        savings_percent = ((original_size - new_size) / original_size * 100) if original_size > 0 else 0
+        
+        logger.info(f"Transcoding complete: {savings_percent:.1f}% savings ({savings_mb:.1f} MB)")
+        
+        return jsonify({
+            'success': True,
+            'original_size': original_size,
+            'new_size': new_size,
+            'savings_percent': savings_percent
+        })
+    
+    except Exception as e:
+        logger.error(f"Error receiving file result: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# Job Control Endpoints
+@app.route('/api/file/<int:file_id>/cancel', methods=['POST'])
+def api_cancel_file(file_id):
+    """Cancel a job"""
+    try:
+        # Get file info to check if it's being processed
+        file_info = database.get_file(file_id)
+        if not file_info:
+            return jsonify({'success': False, 'error': 'File not found'}), 404
+        
+        if file_info['status'] == 'processing' and file_info.get('assigned_worker_id'):
+            # TODO: Send cancel signal to worker
+            logger.info(f"Cancelling job {file_id} on worker {file_info['assigned_worker_id']}")
+        
+        # Reset to pending
+        database.reset_file(file_id)
+        coordinator._broadcast_status()
+        
+        return jsonify({'success': True, 'message': 'Job cancelled and reset to pending'})
+    except Exception as e:
+        logger.error(f"Error cancelling file: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/file/<int:file_id>/retry', methods=['POST'])
+def api_retry_file(file_id):
+    """Retry a failed or stuck job"""
+    try:
+        database.retry_file(file_id)
+        coordinator._broadcast_status()
+        return jsonify({'success': True, 'message': 'Job reset to pending'})
+    except Exception as e:
+        logger.error(f"Error retrying file: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/file/<int:file_id>/skip', methods=['POST'])
+def api_skip_file(file_id):
+    """Skip a file"""
+    try:
+        database.skip_file(file_id)
+        coordinator._broadcast_status()
+        return jsonify({'success': True, 'message': 'File skipped'})
+    except Exception as e:
+        logger.error(f"Error skipping file: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/file/<int:file_id>/delete', methods=['POST'])
+def api_delete_file(file_id):
+    """Delete a file from queue"""
+    try:
+        database.delete_file(file_id)
+        coordinator._broadcast_status()
+        return jsonify({'success': True, 'message': 'File deleted from queue'})
+    except Exception as e:
+        logger.error(f"Error deleting file: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 def main():

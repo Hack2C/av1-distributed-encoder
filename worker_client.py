@@ -38,13 +38,49 @@ class WorkerClient:
         self.worker_id = None
         self.hostname = socket.gethostname()
         self.config = Config()
-        self.quality_lookup = QualityLookup()
         self.is_running = False
         self.shutdown_event = threading.Event()
         self.current_job = None
         
         logger.info(f"Worker initialized: {self.hostname}")
         logger.info(f"Master server: {self.master_url}")
+        
+        # Fetch quality lookup from master or use local
+        self.quality_lookup = self._init_quality_lookup()
+    
+    def _init_quality_lookup(self):
+        """Initialize quality lookup - fetch from master or use local config"""
+        try:
+            # Try to fetch from master
+            logger.info("Fetching quality lookup from master...")
+            quality_response = requests.get(f"{self.master_url}/api/config/quality_lookup.json", timeout=10)
+            audio_response = requests.get(f"{self.master_url}/api/config/audio_codec_lookup.json", timeout=10)
+            
+            if quality_response.status_code == 200 and audio_response.status_code == 200:
+                # Save to temp config directory
+                config_dir = Path(os.environ.get('CONFIG_DIR', '/data/config'))
+                config_dir.mkdir(parents=True, exist_ok=True)
+                
+                quality_file = config_dir / 'quality_lookup.json'
+                audio_file = config_dir / 'audio_codec_lookup.json'
+                
+                with open(quality_file, 'w') as f:
+                    f.write(quality_response.text)
+                
+                with open(audio_file, 'w') as f:
+                    f.write(audio_response.text)
+                
+                logger.info("Successfully fetched and saved config from master")
+                return QualityLookup(config_dir)
+            else:
+                logger.warning(f"Failed to fetch config from master (status: {quality_response.status_code})")
+                return QualityLookup()
+        
+        except Exception as e:
+            logger.warning(f"Could not fetch config from master: {e}")
+            logger.info("Using local quality lookup configuration")
+            return QualityLookup()
+
     
     def register(self):
         """Register with master server"""
@@ -173,7 +209,12 @@ class WorkerClient:
         file_path = Path(job['path'])
         original_size = job['size_bytes']
         
+        # Check if file distribution mode is enabled
+        file_distribution_mode = os.environ.get('FILE_DISTRIBUTION_MODE', 'false').lower() == 'true'
+        
         logger.info(f"Processing job {file_id}: {file_path}")
+        if file_distribution_mode:
+            logger.info("File distribution mode: will download file from master")
         self.current_job = job
         
         try:
@@ -181,12 +222,36 @@ class WorkerClient:
             temp_dir = Path(self.config.get_temp_directory())
             temp_dir.mkdir(parents=True, exist_ok=True)
             
-            # Copy to temp
             temp_input = temp_dir / file_path.name
-            logger.info(f"Copying to temp: {file_path} -> {temp_input}")
             
-            import shutil
-            shutil.copy2(file_path, temp_input)
+            # In file distribution mode, download from master
+            if file_distribution_mode:
+                logger.info(f"Downloading file {file_id} from master...")
+                self.report_progress(file_id, 2)
+                
+                response = requests.get(
+                    f"{self.master_url}/api/worker/{self.worker_id}/file/{file_id}/download",
+                    stream=True,
+                    timeout=300  # 5 minutes for large files
+                )
+                
+                if response.status_code != 200:
+                    raise Exception(f"Failed to download file: HTTP {response.status_code}")
+                
+                # Save streamed file
+                with open(temp_input, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                
+                logger.info(f"File downloaded successfully: {temp_input}")
+            else:
+                # Shared storage mode - copy from network share
+                logger.info(f"Copying to temp: {file_path} -> {temp_input}")
+                
+                import shutil
+                shutil.copy2(file_path, temp_input)
+
             
             # Probe file
             logger.info("Probing file metadata...")
@@ -217,15 +282,41 @@ class WorkerClient:
                 self.report_failure(file_id, f"Not worth transcoding: Output would be {abs(savings_percent):.1f}% {'larger' if output_size > original_size else 'smaller'}")
                 return
             
-            # Replace original
-            self.report_progress(file_id, 95)
-            self._replace_original(file_path, temp_output)
+            # File distribution mode: upload result to master
+            if file_distribution_mode:
+                logger.info(f"Uploading result to master...")
+                self.report_progress(file_id, 95)
+                
+                with open(temp_output, 'rb') as f:
+                    files = {'file': (temp_output.name, f, 'application/octet-stream')}
+                    response = requests.post(
+                        f"{self.master_url}/api/file/{file_id}/result",
+                        files=files,
+                        timeout=300  # 5 minutes for upload
+                    )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    logger.info(f"File uploaded successfully")
+                    
+                    # Report completion
+                    self.report_progress(file_id, 100)
+                    self.report_completion(file_id, output_size, original_size)
+                    logger.info(f"Job {file_id} completed successfully ({savings_percent:.1f}% savings)")
+                else:
+                    raise Exception(f"Failed to upload result: HTTP {response.status_code}")
             
-            # Report completion
-            self.report_progress(file_id, 100)
-            self.report_completion(file_id, output_size, original_size)
-            
-            logger.info(f"Job {file_id} completed successfully ({savings_percent:.1f}% savings)")
+            else:
+                # Shared storage mode: replace file locally
+                self.report_progress(file_id, 95)
+                self._replace_original(file_path, temp_output)
+                
+                # Report completion
+                self.report_progress(file_id, 100)
+                self.report_completion(file_id, output_size, original_size)
+                
+                logger.info(f"Job {file_id} completed successfully ({savings_percent:.1f}% savings)")
+
             
         except Exception as e:
             logger.error(f"Job {file_id} failed: {e}", exc_info=True)
@@ -244,15 +335,50 @@ class WorkerClient:
     
     def _determine_settings(self, metadata):
         """Determine encoding settings based on metadata"""
+        # Video settings
+        codec = metadata['video'].get('codec', 'h264')
+        bitdepth = metadata['video'].get('bit_depth', 8)
+        hdr = metadata['video'].get('hdr', 'SDR')
         resolution = metadata['video']['resolution']
-        hdr = metadata['video']['hdr']
+        bitrate = metadata['video'].get('bitrate', 0)
+        
+        # Determine bitrate category
+        bitrate_mbps = bitrate / 1_000_000 if bitrate else 5
+        if bitrate_mbps < 2:
+            bitrate_category = '1M'
+        elif bitrate_mbps < 6:
+            bitrate_category = '4M'
+        elif bitrate_mbps < 15:
+            bitrate_category = '10M'
+        elif bitrate_mbps < 40:
+            bitrate_category = '25M'
+        else:
+            bitrate_category = '50M'
         
         # Get CRF from lookup table
-        crf = self.quality_lookup.get_crf(resolution, hdr)
+        crf = self.quality_lookup.get_video_crf(codec, bitdepth, hdr, resolution, bitrate_category)
         
-        # Get Opus bitrate
+        # Audio settings
+        audio_codec = metadata['audio'][0]['codec'] if metadata['audio'] else 'aac'
         audio_channels = metadata['audio'][0]['channels'] if metadata['audio'] else 2
-        opus_bitrate = self.quality_lookup.get_opus_bitrate(audio_channels)
+        audio_bitrate = metadata['audio'][0].get('bitrate', 0) if metadata['audio'] else 0
+        audio_bitrate_mbps = audio_bitrate / 1000 if audio_bitrate else 128
+        
+        # Determine audio bitrate category
+        if audio_bitrate_mbps < 96:
+            audio_category = '64k'
+        elif audio_bitrate_mbps < 160:
+            audio_category = '128k'
+        elif audio_bitrate_mbps < 224:
+            audio_category = '192k'
+        elif audio_bitrate_mbps < 320:
+            audio_category = '256k'
+        elif audio_bitrate_mbps < 450:
+            audio_category = '384k'
+        else:
+            audio_category = '512k'
+        
+        opus_bitrate = self.quality_lookup.get_opus_bitrate(audio_codec, audio_channels, audio_category)
         
         return {
             'crf': crf,
@@ -342,18 +468,15 @@ class WorkerClient:
             return
         
         self.is_running = True
-        heartbeat_interval = 10
-        last_heartbeat = time.time()
+        
+        # Start heartbeat thread
+        heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
+        heartbeat_thread.start()
         
         logger.info("Worker started, waiting for jobs...")
         
         while not self.shutdown_event.is_set() and self.is_running:
             try:
-                # Send heartbeat
-                if time.time() - last_heartbeat > heartbeat_interval:
-                    self.send_heartbeat()
-                    last_heartbeat = time.time()
-                
                 # Request job if idle
                 if not self.current_job:
                     job = self.request_job()
@@ -367,6 +490,16 @@ class WorkerClient:
                 time.sleep(5)
         
         logger.info("Worker stopped")
+    
+    def _heartbeat_loop(self):
+        """Background thread for sending heartbeats"""
+        while not self.shutdown_event.is_set() and self.is_running:
+            try:
+                self.send_heartbeat()
+                time.sleep(10)  # Send heartbeat every 10 seconds
+            except Exception as e:
+                logger.warning(f"Heartbeat loop error: {e}")
+                time.sleep(10)
 
 def main():
     """Main entry point"""

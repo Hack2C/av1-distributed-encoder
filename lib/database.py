@@ -49,8 +49,12 @@ class Database:
                     
                     -- Progress tracking
                     progress_percent REAL DEFAULT 0,
+                    assigned_worker_id TEXT,
                     started_at TEXT,
                     completed_at TEXT,
+                    estimated_time_seconds INTEGER,
+                    time_remaining_seconds INTEGER,
+                    processing_speed_fps REAL,
                     
                     -- Results
                     output_size_bytes INTEGER,
@@ -97,8 +101,38 @@ class Database:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_status ON files(status)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_directory ON files(directory)')
             
+            # Migrate existing database - add new columns if they don't exist
+            self._migrate_database(cursor)
+            
             conn.commit()
             logger.info("Database initialized")
+    
+    def _migrate_database(self, cursor):
+        """Add new columns to existing databases"""
+        try:
+            # Check if new columns exist
+            cursor.execute("PRAGMA table_info(files)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            if 'assigned_worker_id' not in columns:
+                cursor.execute("ALTER TABLE files ADD COLUMN assigned_worker_id TEXT")
+                logger.info("Added assigned_worker_id column")
+            
+            if 'estimated_time_seconds' not in columns:
+                cursor.execute("ALTER TABLE files ADD COLUMN estimated_time_seconds INTEGER")
+                logger.info("Added estimated_time_seconds column")
+            
+            if 'time_remaining_seconds' not in columns:
+                cursor.execute("ALTER TABLE files ADD COLUMN time_remaining_seconds INTEGER")
+                logger.info("Added time_remaining_seconds column")
+            
+            if 'processing_speed_fps' not in columns:
+                cursor.execute("ALTER TABLE files ADD COLUMN processing_speed_fps REAL")
+                logger.info("Added processing_speed_fps column")
+                
+        except Exception as e:
+            logger.warning(f"Migration warning: {e}")
+
     
     @contextmanager
     def _get_connection(self):

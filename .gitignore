@@ -38,3 +38,16 @@ TestLib/
 .pytest_cache/
 *.cover
 htmlcov/
+
+# Runtime data directories
+master-data/
+master-temp/
+worker1-data/
+worker1-temp/
+worker2-data/
+worker2-temp/
+*-data/
+*-temp/
+
+# Environment files
+.env

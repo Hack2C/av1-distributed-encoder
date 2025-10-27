@@ -2,6 +2,7 @@
 Quality settings lookup based on source media characteristics
 """
 
+import os
 import json
 import logging
 from pathlib import Path
@@ -11,22 +12,49 @@ logger = logging.getLogger(__name__)
 class QualityLookup:
     """Lookup optimal encoding settings based on source characteristics"""
     
-    def __init__(self):
+    def __init__(self, config_dir=None):
+        """
+        Initialize QualityLookup with config directory
+        
+        Args:
+            config_dir: Directory containing lookup JSON files. 
+                       Defaults to CONFIG_DIR env var or /data/config
+        """
+        if config_dir is None:
+            config_dir = os.environ.get('CONFIG_DIR', '/data/config')
+        
+        self.config_dir = Path(config_dir)
         self.video_lookup = self._load_json('quality_lookup.json')
         self.audio_lookup = self._load_json('audio_codec_lookup.json')
     
     def _load_json(self, filename):
-        """Load JSON lookup table"""
+        """Load JSON lookup table from config directory or fallback to app directory"""
+        # Try config directory first
+        config_path = self.config_dir / filename
+        app_path = Path('/app') / filename
+        
+        # Check which path to use
+        if config_path.exists():
+            filepath = config_path
+            logger.info(f"Loading {filename} from config directory")
+        elif app_path.exists():
+            filepath = app_path
+            logger.info(f"Loading {filename} from app directory (fallback)")
+        else:
+            # Try current directory as last resort
+            filepath = Path(filename)
+            logger.info(f"Loading {filename} from current directory")
+        
         try:
-            with open(filename, 'r') as f:
+            with open(filepath, 'r') as f:
                 data = json.load(f)
                 logger.info(f"Loaded {filename}")
                 return data
         except FileNotFoundError:
-            logger.error(f"Lookup file not found: {filename}")
+            logger.error(f"Lookup file not found: {filepath}")
             raise
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in {filename}: {e}")
+            logger.error(f"Invalid JSON in {filepath}: {e}")
             raise
     
     def get_video_crf(self, codec, bitdepth, hdr, resolution, bitrate_category):

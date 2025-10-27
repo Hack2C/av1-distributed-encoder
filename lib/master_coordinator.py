@@ -77,11 +77,11 @@ class MasterCoordinator:
         """Broadcast status update to all connected clients"""
         try:
             stats = self.db.get_statistics()
-            workers = self.get_worker_status()
+            workers_dict = self.get_workers_dict()  # Get actual worker objects as dict
             
             self.socketio.emit('status_update', {
                 'statistics': stats,
-                'workers': workers,
+                'workers': workers_dict,
                 'timestamp': datetime.now().isoformat()
             })
         except Exception as e:
@@ -134,13 +134,16 @@ class MasterCoordinator:
             if not file_record:
                 return None
             
-            # Mark file as processing
+            # Mark file as processing and assign to worker
             file_id = file_record['id']
-            self.db.mark_file_processing(file_id)
+            self.db.update_file_status(file_id, 'processing',
+                                      started_at=datetime.now().isoformat(),
+                                      assigned_worker_id=worker_id)
             
             # Track assignment
             self.worker_jobs[worker_id] = file_id
             self.workers[worker_id]['status'] = 'processing'
+            self.workers[worker_id]['current_file'] = file_record['filename']
             
             logger.info(f"Assigned job {file_id} ({file_record['filename']}) to {worker_id}")
             
@@ -148,7 +151,9 @@ class MasterCoordinator:
                 'file_id': file_id,
                 'path': file_record['path'],
                 'filename': file_record['filename'],
-                'size_bytes': file_record['size_bytes']
+                'size_bytes': file_record['size_bytes'],
+                'source_codec': file_record.get('source_codec'),
+                'source_resolution': file_record.get('source_resolution')
             }
     
     def update_job_progress(self, worker_id, file_id, progress_data):
@@ -157,14 +162,23 @@ class MasterCoordinator:
         speed = progress_data.get('speed')
         eta = progress_data.get('eta')
         
-        # Update database
-        self.db.update_file_progress(file_id, percent)
+        # Update database with all progress data
+        update_fields = {
+            'progress_percent': percent
+        }
+        if speed is not None:
+            update_fields['processing_speed_fps'] = speed
+        if eta is not None:
+            update_fields['time_remaining_seconds'] = eta
+            
+        self.db.update_file_status(file_id, 'processing', **update_fields)
         
         # Update worker info
         with self.lock:
             if worker_id in self.workers:
                 self.workers[worker_id]['current_progress'] = percent
                 self.workers[worker_id]['current_speed'] = speed
+                self.workers[worker_id]['current_eta'] = eta
     
     def complete_job(self, worker_id, file_id, result_data):
         """Mark job as completed"""
@@ -207,6 +221,11 @@ class MasterCoordinator:
         """Get all workers"""
         with self.lock:
             return list(self.workers.values())
+    
+    def get_workers_dict(self):
+        """Get all workers as dictionary keyed by worker ID"""
+        with self.lock:
+            return dict(self.workers)
     
     def get_worker_status(self):
         """Get worker status summary"""
