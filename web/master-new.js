@@ -192,8 +192,8 @@ function updateWorkers() {
     
     grid.innerHTML = workers.map(([workerId, worker]) => {
         const statusClass = worker.status || 'offline';
-        const cpuUsage = (worker.cpu_usage || 0).toFixed(1);
-        const memUsage = (worker.memory_usage || 0).toFixed(1);
+        const cpuUsage = (worker.cpu_percent || 0).toFixed(1);
+        const memUsage = (worker.memory_percent || 0).toFixed(1);
         const progress = worker.current_progress || 0;
         
         let currentFileInfo = '';

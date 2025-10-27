@@ -41,6 +41,11 @@ class WorkerClient:
         self.is_running = False
         self.shutdown_event = threading.Event()
         self.current_job = None
+        self.current_speed = 0.0  # Current FPS
+        self.current_eta = 0  # Current ETA in seconds
+        
+        # Prime CPU monitoring
+        psutil.cpu_percent(interval=None)
         
         logger.info(f"Worker initialized: {self.hostname}")
         logger.info(f"Master server: {self.master_url}")
@@ -121,7 +126,7 @@ class WorkerClient:
     def send_heartbeat(self):
         """Send heartbeat to master"""
         try:
-            cpu_percent = psutil.cpu_percent(interval=0.1)
+            cpu_percent = psutil.cpu_percent(interval=None)  # Non-blocking, uses previous call
             memory_percent = psutil.virtual_memory().percent
             
             status = 'processing' if self.current_job else 'idle'
@@ -131,7 +136,9 @@ class WorkerClient:
                 json={
                     'status': status,
                     'cpu_percent': cpu_percent,
-                    'memory_percent': memory_percent
+                    'memory_percent': memory_percent,
+                    'current_speed': self.current_speed,
+                    'current_eta': self.current_eta
                 },
                 timeout=5
             )
@@ -164,6 +171,12 @@ class WorkerClient:
     def report_progress(self, file_id, percent, speed=None, eta=None):
         """Report progress to master"""
         try:
+            # Update current speed and ETA for heartbeat
+            if speed is not None:
+                self.current_speed = speed
+            if eta is not None:
+                self.current_eta = eta
+                
             requests.post(
                 f"{self.master_url}/api/worker/{self.worker_id}/job/{file_id}/progress",
                 json={
@@ -416,19 +429,32 @@ class WorkerClient:
         
         # Monitor progress
         last_report = 0
+        current_fps = 0.0
         for line in process.stderr:
             if 'time=' in line:
                 try:
+                    # Parse time
                     time_str = line.split('time=')[1].split()[0]
                     h, m, s = time_str.split(':')
                     current_time = int(h) * 3600 + int(m) * 60 + float(s)
-                    percent = min(95, (current_time / duration * 100) * 0.85 + 10)  # Scale to 10-95%
+                    percent = min(95, (current_time / duration * 100))  # Scale to 0-95%
+                    
+                    # Parse speed (fps)
+                    if 'speed=' in line:
+                        speed_str = line.split('speed=')[1].split('x')[0].strip()
+                        speed_multiplier = float(speed_str)
+                        # fps = frame / elapsed_time, but we can estimate from speed multiplier
+                        current_fps = speed_multiplier * 25  # Rough estimate, 25fps * speed
+                    
+                    # Calculate ETA
+                    remaining_time = duration - current_time
+                    eta_seconds = int(remaining_time / speed_multiplier) if speed_multiplier > 0 else 0
                     
                     # Report every 2 seconds or 1% change
                     if time.time() - last_report > 2 or percent - last_report > 1:
-                        self.report_progress(file_id, percent)
+                        self.report_progress(file_id, percent, speed=current_fps, eta=eta_seconds)
                         last_report = time.time()
-                except:
+                except Exception as e:
                     pass
         
         returncode = process.wait()
@@ -495,8 +521,10 @@ class WorkerClient:
         """Background thread for sending heartbeats"""
         while not self.shutdown_event.is_set() and self.is_running:
             try:
+                # Call cpu_percent to update for next heartbeat
+                psutil.cpu_percent(interval=None)
+                time.sleep(10)  # Wait 10 seconds
                 self.send_heartbeat()
-                time.sleep(10)  # Send heartbeat every 10 seconds
             except Exception as e:
                 logger.warning(f"Heartbeat loop error: {e}")
                 time.sleep(10)

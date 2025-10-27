@@ -56,7 +56,7 @@ class MasterCoordinator:
             time.sleep(5)
     
     def _check_worker_health(self):
-        """Check worker health and mark stale workers as offline"""
+        """Check worker health and mark jobs as failed if workers time out"""
         with self.lock:
             now = datetime.now()
             timeout = timedelta(seconds=30)
@@ -72,6 +72,19 @@ class MasterCoordinator:
                         file_id = self.worker_jobs[worker_id]
                         self.db.mark_file_failed(file_id, "Worker disconnected")
                         del self.worker_jobs[worker_id]
+            
+            # Check for orphaned files in processing state without an assigned worker
+            processing_files = self.db.get_all_files(status='processing')
+            active_worker_ids = set(self.worker_jobs.keys())
+            
+            for file_record in processing_files:
+                file_id = file_record['id']
+                assigned_worker = file_record.get('assigned_worker_id')
+                
+                # If file is processing but no worker is assigned or worker is not active
+                if not assigned_worker or assigned_worker not in active_worker_ids:
+                    logger.warning(f"Found orphaned file {file_id} in processing state, marking as failed")
+                    self.db.mark_file_failed(file_id, "No active worker assigned")
     
     def _broadcast_status(self):
         """Broadcast status update to all connected clients"""
@@ -121,6 +134,10 @@ class MasterCoordinator:
                     self.workers[worker_id]['cpu_percent'] = data['cpu_percent']
                 if 'memory_percent' in data:
                     self.workers[worker_id]['memory_percent'] = data['memory_percent']
+                if 'current_speed' in data:
+                    self.workers[worker_id]['current_speed'] = data['current_speed']
+                if 'current_eta' in data:
+                    self.workers[worker_id]['current_eta'] = data['current_eta']
     
     def assign_job(self, worker_id):
         """Assign next job to worker"""

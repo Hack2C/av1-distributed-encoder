@@ -5,7 +5,7 @@ services:
     build: .
     container_name: av1-worker
     restart: unless-stopped
-    command: python3 worker_client.py ${MASTER_URL}
+    command: python3 worker_client.py http://master:8090
     volumes:
       # Local media directories (uncomment if using local paths)
       # - D:/Movies:/media/Movies
