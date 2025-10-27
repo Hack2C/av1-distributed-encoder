@@ -145,16 +145,59 @@ class Database:
             conn.close()
     
     def add_file(self, file_info):
-        """Add a new file to the queue"""
+        """Add a new file to the queue with optional metadata, or update if exists"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR IGNORE INTO files (path, directory, filename, size_bytes)
-                VALUES (?, ?, ?, ?)
-            ''', (file_info['path'], file_info['directory'], 
-                  file_info['filename'], file_info['size_bytes']))
-            conn.commit()
-            return cursor.lastrowid
+            
+            # Check if file already exists
+            cursor.execute('SELECT id FROM files WHERE path = ?', (file_info['path'],))
+            existing = cursor.fetchone()
+            
+            if existing:
+                # Update existing file with new metadata
+                file_id = existing[0]
+                update_fields = []
+                values = []
+                
+                # Update all provided fields except path
+                for key, value in file_info.items():
+                    if key != 'path':
+                        update_fields.append(f'{key} = ?')
+                        values.append(value)
+                
+                if update_fields:
+                    values.append(file_id)
+                    query = f"UPDATE files SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+                    cursor.execute(query, values)
+                    conn.commit()
+                return file_id
+            else:
+                # Insert new file
+                fields = ['path', 'directory', 'filename', 'size_bytes']
+                values = [file_info['path'], file_info['directory'], 
+                         file_info['filename'], file_info['size_bytes']]
+                
+                # Optional metadata fields
+                optional_fields = [
+                    'source_codec', 'source_bitrate', 'source_resolution',
+                    'source_bitdepth', 'source_hdr', 'source_audio_codec',
+                    'source_audio_channels', 'source_audio_bitrate'
+                ]
+                
+                for field in optional_fields:
+                    if field in file_info:
+                        fields.append(field)
+                        values.append(file_info[field])
+                
+                placeholders = ', '.join(['?'] * len(fields))
+                field_names = ', '.join(fields)
+                
+                cursor.execute(f'''
+                    INSERT INTO files ({field_names})
+                    VALUES ({placeholders})
+                ''', values)
+                conn.commit()
+                return cursor.lastrowid
     
     def get_next_pending_file(self):
         """Get the next file to process"""

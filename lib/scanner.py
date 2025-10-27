@@ -5,6 +5,7 @@ Media file scanner - discovers video files in configured directories
 import os
 import logging
 from pathlib import Path
+from lib.probe import MediaProbe
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,16 @@ class MediaScanner:
                         logger.error(f"Cannot stat file {file_path}: {e}")
                         continue
                     
+                    # Probe file metadata
+                    metadata = None
+                    try:
+                        logger.info(f"Probing {file_path.name}...")
+                        metadata = MediaProbe.probe_file(file_path)
+                        if metadata and metadata.get('video'):
+                            logger.info(f"  Resolution: {metadata['video'].get('resolution')}, Codec: {metadata['video'].get('codec')}")
+                    except Exception as e:
+                        logger.warning(f"Failed to probe {file_path}: {e}")
+                    
                     # Add to database
                     file_info = {
                         'path': str(file_path),
@@ -81,6 +92,21 @@ class MediaScanner:
                         'filename': file_path.name,
                         'size_bytes': size_bytes
                     }
+                    
+                    # Add metadata if available
+                    if metadata and metadata.get('video'):
+                        video = metadata['video']
+                        file_info['source_codec'] = video.get('codec')
+                        file_info['source_bitrate'] = video.get('bitrate')
+                        file_info['source_resolution'] = video.get('resolution')
+                        file_info['source_bitdepth'] = video.get('bitdepth')
+                        file_info['source_hdr'] = video.get('hdr')
+                        
+                        if metadata.get('audio') and len(metadata['audio']) > 0:
+                            audio = metadata['audio'][0]
+                            file_info['source_audio_codec'] = audio.get('codec')
+                            file_info['source_audio_channels'] = audio.get('channels')
+                            file_info['source_audio_bitrate'] = audio.get('bitrate')
                     
                     self.db.add_file(file_info)
                     count += 1
