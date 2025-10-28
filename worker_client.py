@@ -177,8 +177,11 @@ class WorkerClient:
                 heartbeat_data['current_job'] = {
                     'file_id': self.current_job['file_id'],
                     'filename': self.current_job['filename'],
+                    'file_path': self.current_job.get('path'),      # Absolute path for validation
+                    'file_size': self.current_job.get('size_bytes'), # File size for integrity check
                     'progress_percent': getattr(self, 'current_progress', 0),
-                    'started_at': getattr(self, 'job_start_time', None)
+                    'started_at': getattr(self, 'job_start_time', None),
+                    'is_completed': getattr(self, 'job_completed_but_not_reported', False)
                 }
             
             response = requests.post(
@@ -246,20 +249,44 @@ class WorkerClient:
             logger.warning(f"Error reporting progress: {e}")
     
     def report_completion(self, file_id, output_size, original_size):
-        """Report job completion to master"""
-        try:
-            response = requests.post(
-                f"{self.master_url}/api/worker/{self.worker_id}/job/{file_id}/complete",
-                json={
-                    'output_size': output_size,
-                    'original_size': original_size
-                },
-                timeout=10
-            )
-            return response.status_code == 200
-        except Exception as e:
-            logger.error(f"Error reporting completion: {e}")
-            return False
+        """Report job completion to master with retries"""
+        completion_data = {
+            'output_size': output_size,
+            'original_size': original_size
+        }
+        
+        # Keep trying to report completion - this work is valuable!
+        max_retries = 100  # Try for a long time
+        retry_delay = 30   # Wait 30 seconds between retries
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    f"{self.master_url}/api/worker/{self.worker_id}/job/{file_id}/complete",
+                    json=completion_data,
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"Successfully reported completion for job {file_id}")
+                    return True
+                elif response.status_code == 404:
+                    # Worker not registered, try to re-register
+                    logger.warning(f"Worker not found when reporting completion, re-registering...")
+                    if self.register():
+                        continue  # Retry with new registration
+                else:
+                    logger.warning(f"Completion report failed with status {response.status_code}, retrying...")
+                    
+            except Exception as e:
+                logger.warning(f"Error reporting completion (attempt {attempt + 1}/{max_retries}): {e}")
+            
+            if attempt < max_retries - 1:
+                logger.info(f"Retrying completion report in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+        
+        logger.error(f"Failed to report completion after {max_retries} attempts")
+        return False
     
     def report_failure(self, file_id, error_message):
         """Report job failure to master"""
@@ -378,10 +405,16 @@ class WorkerClient:
                             logger.debug(f"Removing temp output after successful upload: {temp_output}")
                             temp_output.unlink()
                         
-                        # Report completion
+                        # Report completion - this will retry until successful
                         self.report_progress(file_id, 100)
-                        self.report_completion(file_id, output_size, original_size)
-                        logger.info(f"Job {file_id} completed successfully ({savings_percent:.1f}% savings)")
+                        completion_success = self.report_completion(file_id, output_size, original_size)
+                        
+                        if completion_success:
+                            logger.info(f"Job {file_id} completed successfully ({savings_percent:.1f}% savings)")
+                        else:
+                            logger.error(f"Job {file_id} completed but could not notify master - will retry via heartbeat")
+                            # Mark job as completed but not reported for heartbeat recovery
+                            self.job_completed_but_not_reported = True
                     else:
                         raise Exception(f"Master reported upload failure: {result.get('error', 'Unknown error')}")
                 else:
@@ -407,6 +440,7 @@ class WorkerClient:
             self.current_job = None
             self.current_progress = 0
             self.job_start_time = None
+            self.job_completed_but_not_reported = False
             # Cleanup temp files
             try:
                 if temp_input.exists():

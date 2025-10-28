@@ -170,18 +170,74 @@ def api_worker_heartbeat(worker_id):
         if current_job and worker_id not in coordinator.worker_jobs:
             file_id = current_job['file_id']
             progress = current_job.get('progress_percent', 0)
+            claimed_path = current_job.get('file_path')  # Worker should send absolute path
+            claimed_size = current_job.get('file_size')   # Worker should send file size
             
-            logger.info(f"Recovering job {file_id} for reconnected worker {worker_id} at {progress}% progress")
+            # Validate that the file exists in master database and paths match
+            file_record = database.get_file_by_id(file_id)
+            if not file_record:
+                logger.warning(f"Worker {worker_id} claims to process file {file_id} but file not found in database")
+                return jsonify({'success': False, 'error': 'File not found'}), 400
             
-            # Update database to reflect current state
-            database.update_file_status(file_id, 'processing', 
-                                      progress_percent=progress,
-                                      assigned_worker_id=worker_id)
+            if file_record['status'] not in ['processing', 'pending']:
+                logger.warning(f"Worker {worker_id} claims to process file {file_id} but file status is {file_record['status']}")
+                return jsonify({'success': False, 'error': 'File not in processable state'}), 400
             
-            # Update coordinator state
-            coordinator.worker_jobs[worker_id] = file_id
-            coordinator.workers[worker_id]['current_file'] = current_job['filename']
-            coordinator.workers[worker_id]['status'] = 'processing'
+            # Validate file path matches (security check)
+            if claimed_path and claimed_path != file_record['path']:
+                logger.warning(f"Worker {worker_id} claims to process file with path {claimed_path} but database has {file_record['path']}")
+                return jsonify({'success': False, 'error': 'File path mismatch'}), 400
+            
+            # Validate file size matches (integrity check)
+            if claimed_size and claimed_size != file_record['size_bytes']:
+                logger.warning(f"Worker {worker_id} claims to process file {file_id} with size {claimed_size} but database has {file_record['size_bytes']}")
+                return jsonify({'success': False, 'error': 'File size mismatch'}), 400
+            
+            # Validate job timing - allow long-running jobs but reject truly stale ones
+            job_start_time = current_job.get('started_at')
+            if job_start_time:
+                try:
+                    start_time = datetime.fromisoformat(job_start_time.replace('Z', '+00:00'))
+                    job_age = datetime.now() - start_time
+                    
+                    # Only reject jobs that are extremely old (30 days) AND have made no progress
+                    # This allows week-long transcodes but prevents truly abandoned work
+                    if job_age > timedelta(days=30) and progress < 10:
+                        logger.warning(f"Worker {worker_id} job {file_id} too stale to recover (started {job_start_time}, {progress}% progress)")
+                        return jsonify({'success': False, 'error': 'Job too stale to recover'}), 400
+                    
+                    logger.info(f"Accepting job recovery - age: {job_age}, progress: {progress}%")
+                except Exception as e:
+                    logger.warning(f"Could not parse job start time {job_start_time}: {e}")
+            
+            # Check if worker claims job is completed but not reported
+            is_completed = current_job.get('is_completed', False)
+            
+            if is_completed:
+                logger.info(f"Worker {worker_id} has completed job {file_id} but hadn't reported it - accepting as completed")
+                # Mark as completed - worker will need to report detailed completion info separately
+                database.update_file_status(file_id, 'completed',
+                                          progress_percent=100,
+                                          completed_at=datetime.now().isoformat(),
+                                          assigned_worker_id=worker_id)
+                
+                # Clear worker's current job since it's done
+                if worker_id in coordinator.worker_jobs:
+                    del coordinator.worker_jobs[worker_id]
+                coordinator.workers[worker_id]['status'] = 'idle'
+                coordinator.workers[worker_id]['current_file'] = None
+            else:
+                logger.info(f"Recovering job {file_id} ({file_record['filename']}) for reconnected worker {worker_id} at {progress}% progress")
+                
+                # Update database to reflect current state
+                database.update_file_status(file_id, 'processing', 
+                                          progress_percent=progress,
+                                          assigned_worker_id=worker_id)
+                
+                # Update coordinator state
+                coordinator.worker_jobs[worker_id] = file_id
+                coordinator.workers[worker_id]['current_file'] = file_record['filename']
+                coordinator.workers[worker_id]['status'] = 'processing'
         
         coordinator.update_worker_heartbeat(worker_id, data)
         return jsonify({'success': True})
