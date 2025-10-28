@@ -145,8 +145,8 @@ class MasterCoordinator:
             if worker_id not in self.workers:
                 return None
             
-            # Get next pending file
-            file_record = self.db.get_next_pending_file()
+            # Get next pending file (respecting priority and preferred worker)
+            file_record = self.db.get_next_pending_file(worker_id)
             
             if not file_record:
                 return None

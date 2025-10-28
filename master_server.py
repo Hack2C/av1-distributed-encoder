@@ -447,6 +447,67 @@ def api_delete_file(file_id):
         logger.error(f"Error deleting file: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/file/<int:file_id>/priority', methods=['POST'])
+def set_file_priority_endpoint(file_id):
+    """Set file priority and preferred worker"""
+    try:
+        data = request.get_json()
+        preferred_worker_id = data.get('preferred_worker_id')
+        
+        # Validate worker exists if specified
+        if preferred_worker_id:
+            coordinator = app.coordinator
+            if preferred_worker_id not in coordinator.workers:
+                return jsonify({'error': f'Worker {preferred_worker_id} not found'}), 400
+        
+        # Set high priority (higher number = higher priority)
+        priority = 1000  # High priority value
+        
+        # Use database method to set priority
+        db = app.database
+        db.set_file_priority(file_id, priority, preferred_worker_id)
+        
+        return jsonify({'success': True, 'message': 'File priority set'})
+    
+    except Exception as e:
+        logger.error(f"Error setting file priority: {e}")
+        return jsonify({'error': str(e)}), 500
+    """Set file priority for specific worker"""
+    try:
+        data = request.get_json()
+        worker_id = data.get('worker_id')
+        priority = data.get('priority', 'high')
+        
+        if not worker_id:
+            return jsonify({'success': False, 'error': 'Worker ID required'}), 400
+        
+        # Check if file exists and is in pending/failed status
+        file_info = database.get_file(file_id)
+        if not file_info:
+            return jsonify({'success': False, 'error': 'File not found'}), 404
+        
+        if file_info['status'] not in ['pending', 'failed']:
+            return jsonify({'success': False, 'error': 'File must be pending or failed to prioritize'}), 400
+        
+        # Check if worker exists and is active
+        if worker_id not in coordinator.workers:
+            return jsonify({'success': False, 'error': 'Worker not found or not active'}), 404
+        
+        # Set priority and preferred worker
+        database.set_file_priority(file_id, priority, worker_id)
+        
+        # Reset status to pending if it was failed
+        if file_info['status'] == 'failed':
+            database.reset_file(file_id)
+        
+        coordinator._broadcast_status()
+        
+        logger.info(f"File {file_id} prioritized for worker {worker_id}")
+        return jsonify({'success': True, 'message': f'File prioritized for worker {worker_id}'})
+    except Exception as e:
+        logger.error(f"Error setting file priority: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 def main():
     """Main entry point"""
     # Register signal handlers

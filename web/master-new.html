@@ -97,6 +97,26 @@
         </section>
     </div>
 
+    <!-- Priority Modal -->
+    <div id="priorityModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🚀 Push to Top of Queue</h3>
+                <span class="modal-close" onclick="closePriorityModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Select a worker to prioritize this file:</p>
+                <div id="workerSelection" class="worker-selection">
+                    <div class="worker-option loading">Loading workers...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closePriorityModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmPriority()" id="confirmBtn" disabled>Push to Top</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Socket.IO -->
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="master-new.js"></script>

@@ -68,6 +68,10 @@ class Database:
                     error_message TEXT,
                     retry_count INTEGER DEFAULT 0,
                     
+                    -- Priority handling
+                    priority INTEGER DEFAULT 0,
+                    preferred_worker_id TEXT,
+                    
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
@@ -144,6 +148,14 @@ class Database:
             if 'color_space' not in columns:
                 cursor.execute("ALTER TABLE files ADD COLUMN color_space TEXT")
                 logger.info("Added color_space column")
+            
+            if 'priority' not in columns:
+                cursor.execute("ALTER TABLE files ADD COLUMN priority INTEGER DEFAULT 0")
+                logger.info("Added priority column")
+            
+            if 'preferred_worker_id' not in columns:
+                cursor.execute("ALTER TABLE files ADD COLUMN preferred_worker_id TEXT")
+                logger.info("Added preferred_worker_id column")
                 
         except Exception as e:
             logger.warning(f"Migration warning: {e}")
@@ -215,14 +227,28 @@ class Database:
                 conn.commit()
                 return cursor.lastrowid
     
-    def get_next_pending_file(self):
-        """Get the next file to process"""
+    def get_next_pending_file(self, worker_id=None):
+        """Get the next file to process, respecting priority and preferred worker"""
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            
+            if worker_id:
+                # First check for files specifically assigned to this worker
+                cursor.execute('''
+                    SELECT * FROM files 
+                    WHERE status = 'pending' AND preferred_worker_id = ?
+                    ORDER BY priority DESC, created_at ASC
+                    LIMIT 1
+                ''', (worker_id,))
+                row = cursor.fetchone()
+                if row:
+                    return dict(row)
+            
+            # Then get any pending file, prioritized
             cursor.execute('''
                 SELECT * FROM files 
                 WHERE status = 'pending'
-                ORDER BY created_at ASC
+                ORDER BY priority DESC, created_at ASC
                 LIMIT 1
             ''')
             row = cursor.fetchone()
@@ -418,4 +444,29 @@ class Database:
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
             ''', (file_id,))
+            conn.commit()
+    
+    def set_file_priority(self, file_id, priority, preferred_worker_id=None):
+        """Set file priority and optionally assign to specific worker"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            update_fields = ['priority = ?', 'updated_at = CURRENT_TIMESTAMP']
+            values = [priority]
+            
+            if preferred_worker_id is not None:
+                update_fields.append('preferred_worker_id = ?')
+                values.append(preferred_worker_id)
+            
+            # If file is failed, reset it to pending
+            cursor.execute('SELECT status FROM files WHERE id = ?', (file_id,))
+            current_status = cursor.fetchone()
+            if current_status and current_status[0] == 'failed':
+                update_fields.extend(['status = ?', 'error_message = NULL', 'progress_percent = 0'])
+                values.extend(['pending', None, 0])
+            
+            values.append(file_id)
+            
+            query = f'UPDATE files SET {", ".join(update_fields)} WHERE id = ?'
+            cursor.execute(query, values)
             conn.commit()

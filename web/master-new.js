@@ -303,6 +303,7 @@ function renderFiles(files) {
         let actions = '';
         if (file.status === 'pending') {
             actions = `
+                <button class="btn btn-small btn-primary" onclick="showPriorityModal(${file.id})">🚀 Push to Top</button>
                 <button class="btn btn-small btn-warning" onclick="controlFile(${file.id}, 'skip')">Skip</button>
                 <button class="btn btn-small btn-danger" onclick="controlFile(${file.id}, 'delete')">Delete</button>
             `;
@@ -312,6 +313,7 @@ function renderFiles(files) {
             `;
         } else if (file.status === 'failed') {
             actions = `
+                <button class="btn btn-small btn-primary" onclick="showPriorityModal(${file.id})">🚀 Push to Top</button>
                 <button class="btn btn-small btn-success" onclick="controlFile(${file.id}, 'retry')">Retry</button>
                 <button class="btn btn-small btn-danger" onclick="controlFile(${file.id}, 'delete')">Delete</button>
             `;
@@ -406,6 +408,117 @@ function showNotification(message, type = 'info') {
     // Simple notification (can be enhanced with a notification library)
     console.log(`[${type.toUpperCase()}] ${message}`);
     alert(message);
+}
+
+// Priority Modal Functions
+let selectedFileId = null;
+let selectedWorkerId = null;
+
+async function showPriorityModal(fileId) {
+    selectedFileId = fileId;
+    selectedWorkerId = null;
+    
+    const modal = document.getElementById('priorityModal');
+    const workerSelection = document.getElementById('workerSelection');
+    const confirmBtn = document.getElementById('confirmBtn');
+    
+    // Show modal
+    modal.style.display = 'block';
+    
+    // Reset state
+    workerSelection.innerHTML = '<div class="worker-option loading">Loading workers...</div>';
+    confirmBtn.disabled = true;
+    
+    try {
+        // Fetch current workers
+        const response = await fetch('/api/workers');
+        const data = await response.json();
+        
+        if (data.success && data.workers && data.workers.length > 0) {
+            // Render worker options
+            workerSelection.innerHTML = data.workers.map(worker => `
+                <div class="worker-option" onclick="selectWorker('${worker.id}')">
+                    <div class="worker-info">
+                        <div class="worker-name">${worker.id}</div>
+                        <div class="worker-stats">
+                            ${worker.capabilities.cpu_count} cores • 
+                            ${(worker.capabilities.memory_total / 1024 / 1024 / 1024).toFixed(1)} GB RAM
+                        </div>
+                    </div>
+                    <div class="worker-status ${worker.status}">
+                        ${worker.status}
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            workerSelection.innerHTML = '<div class="worker-option">No workers available</div>';
+        }
+    } catch (error) {
+        console.error('Error fetching workers:', error);
+        workerSelection.innerHTML = '<div class="worker-option">Error loading workers</div>';
+    }
+}
+
+function selectWorker(workerId) {
+    selectedWorkerId = workerId;
+    
+    // Update UI
+    document.querySelectorAll('.worker-option').forEach(option => {
+        option.classList.remove('selected');
+    });
+    
+    event.target.closest('.worker-option').classList.add('selected');
+    
+    // Enable confirm button
+    document.getElementById('confirmBtn').disabled = false;
+}
+
+function closePriorityModal() {
+    document.getElementById('priorityModal').style.display = 'none';
+    selectedFileId = null;
+    selectedWorkerId = null;
+}
+
+async function confirmPriority() {
+    if (!selectedFileId || !selectedWorkerId) {
+        showNotification('Please select a worker', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/file/${selectedFileId}/priority`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                worker_id: selectedWorkerId,
+                priority: 'high'
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification('File pushed to top of queue!', 'success');
+            closePriorityModal();
+            // Refresh the file list
+            loadFiles();
+        } else {
+            showNotification(result.error || 'Failed to prioritize file', 'error');
+        }
+    } catch (error) {
+        console.error('Error setting priority:', error);
+        showNotification('Failed to prioritize file', 'error');
+    }
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('priorityModal');
+    if (event.target === modal) {
+        closePriorityModal();
+    }
 }
 
 // Export for onclick handlers
