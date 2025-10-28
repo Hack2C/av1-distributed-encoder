@@ -23,6 +23,7 @@ transcoding.db
 Movies/
 TV/
 TestLib/
+ProductionTest/
 
 # Temp transcoding directory
 /tmp/av1_transcoding/
