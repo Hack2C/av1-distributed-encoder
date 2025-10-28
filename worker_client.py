@@ -332,6 +332,7 @@ class WorkerClient:
                 logger.info(f"Uploading result to master...")
                 self.report_progress(file_id, 95)
                 
+                upload_success = False
                 with open(temp_output, 'rb') as f:
                     files = {'file': (temp_output.name, f, 'application/octet-stream')}
                     response = requests.post(
@@ -342,12 +343,21 @@ class WorkerClient:
                 
                 if response.status_code == 200:
                     result = response.json()
-                    logger.info(f"File uploaded successfully")
-                    
-                    # Report completion
-                    self.report_progress(file_id, 100)
-                    self.report_completion(file_id, output_size, original_size)
-                    logger.info(f"Job {file_id} completed successfully ({savings_percent:.1f}% savings)")
+                    if result.get('success'):
+                        logger.info(f"File uploaded successfully, master confirmed save")
+                        upload_success = True
+                        
+                        # Only delete temp output after successful upload
+                        if temp_output.exists():
+                            logger.debug(f"Removing temp output after successful upload: {temp_output}")
+                            temp_output.unlink()
+                        
+                        # Report completion
+                        self.report_progress(file_id, 100)
+                        self.report_completion(file_id, output_size, original_size)
+                        logger.info(f"Job {file_id} completed successfully ({savings_percent:.1f}% savings)")
+                    else:
+                        raise Exception(f"Master reported upload failure: {result.get('error', 'Unknown error')}")
                 else:
                     raise Exception(f"Failed to upload result: HTTP {response.status_code}")
             
@@ -374,8 +384,9 @@ class WorkerClient:
                 if temp_input.exists():
                     logger.debug(f"Removing temp input: {temp_input}")
                     temp_input.unlink()
+                # Only delete temp_output if it still exists (not already deleted after successful upload)
                 if 'temp_output' in locals() and temp_output.exists():
-                    logger.debug(f"Removing temp output: {temp_output}")
+                    logger.warning(f"Removing temp output (upload may have failed): {temp_output}")
                     temp_output.unlink()
                 
                 # Clean up any other files left in temp directory
