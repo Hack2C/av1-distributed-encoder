@@ -9,6 +9,7 @@ import json
 import signal
 import logging
 import threading
+import shutil
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, jsonify, request, send_file
@@ -363,7 +364,13 @@ def api_file_result_upload(file_id):
         
         # Move result to original location
         logger.info(f"Moving {temp_output} to {original_path}")
-        temp_output.rename(original_path)
+        shutil.move(str(temp_output), str(original_path))
+        
+        # Set correct ownership (UID/GID from environment)
+        uid = int(os.environ.get('PUID', '1000'))
+        gid = int(os.environ.get('PGID', '1000'))
+        os.chown(str(original_path), uid, gid)
+        
         logger.info(f"File replaced: {original_path}")
         
         # Calculate savings
