@@ -330,46 +330,47 @@ def api_file_result_upload(file_id):
         
         logger.info(f"Receiving transcoded file {file_id} for {original_path}")
         
-        # Save to temp location first
-        temp_dir = Path(config.get_temp_directory())
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        temp_output = temp_dir / f"{original_path.stem}_result{original_path.suffix}"
-        
-        logger.info(f"Saving uploaded file to: {temp_output}")
-        uploaded_file.save(str(temp_output))
-        
-        # Get file sizes for statistics
-        # Use size from database for original (file may not be accessible from master)
-        original_size = file_info.get('size_bytes', 0)
-        new_size = temp_output.stat().st_size
-        
-        logger.info(f"Original size: {original_size}, New size: {new_size}")
-        
         # Ensure target directory exists and is writable
         original_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Replace original file
-        if config.is_testing_mode():
-            backup_path = original_path.with_suffix(original_path.suffix + '.bak')
-            if backup_path.exists():
-                logger.info(f"Removing old backup: {backup_path}")
-                backup_path.unlink()
-            if original_path.exists():
-                original_path.rename(backup_path)
-                logger.info(f"Backup created: {backup_path}")
-        else:
-            if original_path.exists():
-                logger.info(f"Removing original file: {original_path}")
-                original_path.unlink()
+        # Save directly to final location with .av1 extension
+        av1_path = original_path.with_suffix('.av1')
+        logger.info(f"Saving uploaded file to: {av1_path}")
+        uploaded_file.save(str(av1_path))
         
-        # Move result to original location
-        logger.info(f"Moving {temp_output} to {original_path}")
-        shutil.move(str(temp_output), str(original_path))
-        
-        # Set correct ownership (UID/GID from environment)
+        # Set correct ownership on the .av1 file
         uid = int(os.environ.get('PUID', '1000'))
         gid = int(os.environ.get('PGID', '1000'))
+        os.chown(str(av1_path), uid, gid)
+        
+        # Get file sizes for statistics
+        original_size = file_info.get('size_bytes', 0)
+        new_size = av1_path.stat().st_size
+        
+        logger.info(f"Original size: {original_size}, New size: {new_size}")
+        
+        # Rename original to .bak
+        backup_path = original_path.with_suffix(original_path.suffix + '.bak')
+        if backup_path.exists():
+            logger.info(f"Removing old backup: {backup_path}")
+            backup_path.unlink()
+        
+        if original_path.exists():
+            logger.info(f"Renaming original to backup: {original_path} -> {backup_path}")
+            original_path.rename(backup_path)
+        
+        # Rename .av1 to .mkv (or original extension)
+        logger.info(f"Renaming transcoded file: {av1_path} -> {original_path}")
+        av1_path.rename(original_path)
+        
+        # Set correct ownership on final file
         os.chown(str(original_path), uid, gid)
+        
+        # Remove backup if not in testing mode
+        if not config.is_testing_mode():
+            if backup_path.exists():
+                logger.info(f"Removing backup (not in test mode): {backup_path}")
+                backup_path.unlink()
         
         logger.info(f"File replaced: {original_path}")
         
