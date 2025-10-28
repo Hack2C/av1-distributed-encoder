@@ -12,6 +12,7 @@ import socket
 import requests
 import threading
 import psutil
+from datetime import datetime
 from pathlib import Path
 from datetime import datetime
 
@@ -163,17 +164,39 @@ class WorkerClient:
             
             status = 'processing' if self.current_job else 'idle'
             
+            heartbeat_data = {
+                'status': status,
+                'cpu_percent': cpu_percent,
+                'memory_percent': memory_percent,
+                'current_speed': self.current_speed,
+                'current_eta': self.current_eta
+            }
+            
+            # Include current job info for reconnection recovery
+            if self.current_job:
+                heartbeat_data['current_job'] = {
+                    'file_id': self.current_job['file_id'],
+                    'filename': self.current_job['filename'],
+                    'progress_percent': getattr(self, 'current_progress', 0),
+                    'started_at': getattr(self, 'job_start_time', None)
+                }
+            
             response = requests.post(
                 f"{self.master_url}/api/worker/{self.worker_id}/heartbeat",
-                json={
-                    'status': status,
-                    'cpu_percent': cpu_percent,
-                    'memory_percent': memory_percent,
-                    'current_speed': self.current_speed,
-                    'current_eta': self.current_eta
-                },
+                json=heartbeat_data,
                 timeout=5
             )
+            
+            # Handle reconnection if worker was lost
+            if response.status_code == 404:
+                logger.warning("Worker not found on master, attempting to re-register...")
+                if self.register():
+                    # Retry heartbeat after successful registration
+                    response = requests.post(
+                        f"{self.master_url}/api/worker/{self.worker_id}/heartbeat",
+                        json=heartbeat_data,
+                        timeout=5
+                    )
             
             return response.status_code == 200
             
@@ -203,7 +226,8 @@ class WorkerClient:
     def report_progress(self, file_id, percent, speed=None, eta=None):
         """Report progress to master"""
         try:
-            # Update current speed and ETA for heartbeat
+            # Update current progress and stats for heartbeat
+            self.current_progress = percent
             if speed is not None:
                 self.current_speed = speed
             if eta is not None:
@@ -261,6 +285,8 @@ class WorkerClient:
         if file_distribution_mode:
             logger.info("File distribution mode: will download file from master")
         self.current_job = job
+        self.job_start_time = datetime.now().isoformat()
+        self.current_progress = 0
         
         try:
             # Create temp directory
@@ -379,6 +405,8 @@ class WorkerClient:
         
         finally:
             self.current_job = None
+            self.current_progress = 0
+            self.job_start_time = None
             # Cleanup temp files
             try:
                 if temp_input.exists():

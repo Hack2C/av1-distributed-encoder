@@ -101,23 +101,48 @@ class MasterCoordinator:
             logger.error(f"Error broadcasting status: {e}")
     
     def register_worker(self, hostname, capabilities, version):
-        """Register a new worker"""
+        """Register a new worker or re-register existing worker"""
         with self.lock:
-            # Generate worker ID
-            worker_id = f"worker-{len(self.workers) + 1}"
+            # Check if worker with same hostname already exists (reconnection)
+            existing_worker_id = None
+            for wid, worker in self.workers.items():
+                if worker['hostname'] == hostname:
+                    existing_worker_id = wid
+                    logger.info(f"Worker {wid} ({hostname}) reconnecting")
+                    break
             
-            self.workers[worker_id] = {
-                'id': worker_id,
-                'hostname': hostname,
-                'capabilities': capabilities,
-                'version': version,
-                'status': 'idle',
-                'registered_at': datetime.now().isoformat(),
-                'last_seen': datetime.now().isoformat(),
-                'jobs_completed': 0,
-                'jobs_failed': 0,
-                'total_bytes_processed': 0
-            }
+            # Use existing worker ID or generate new one
+            if existing_worker_id:
+                worker_id = existing_worker_id
+                # Preserve job stats but update connection info
+                self.workers[worker_id].update({
+                    'capabilities': capabilities,
+                    'version': version,
+                    'status': 'idle',
+                    'last_seen': datetime.now().isoformat()
+                })
+                
+                # Check for any processing files assigned to this worker for recovery
+                processing_files = self.db.get_all_files(status='processing')
+                for file_record in processing_files:
+                    if file_record.get('assigned_worker_id') == worker_id:
+                        logger.info(f"Found orphaned processing file {file_record['id']} assigned to reconnecting worker {worker_id}")
+                        # Will be recovered via heartbeat with current_job info
+            else:
+                # Generate new worker ID
+                worker_id = f"worker-{len(self.workers) + 1}"
+                self.workers[worker_id] = {
+                    'id': worker_id,
+                    'hostname': hostname,
+                    'capabilities': capabilities,
+                    'version': version,
+                    'status': 'idle',
+                    'registered_at': datetime.now().isoformat(),
+                    'last_seen': datetime.now().isoformat(),
+                    'jobs_completed': 0,
+                    'jobs_failed': 0,
+                    'total_bytes_processed': 0
+                }
             
             logger.info(f"Registered worker: {worker_id} ({hostname})")
             return worker_id

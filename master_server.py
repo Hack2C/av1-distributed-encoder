@@ -156,9 +156,33 @@ def api_worker_register():
 
 @app.route('/api/worker/<worker_id>/heartbeat', methods=['POST'])
 def api_worker_heartbeat(worker_id):
-    """Worker heartbeat"""
+    """Worker heartbeat with reconnection recovery"""
     try:
         data = request.json
+        
+        # Check if worker exists, if not return 404 to trigger re-registration
+        if worker_id not in coordinator.workers:
+            logger.warning(f"Heartbeat from unknown worker {worker_id}, triggering re-registration")
+            return jsonify({'success': False, 'error': 'Worker not registered'}), 404
+        
+        # Handle job recovery if worker reconnected with current job
+        current_job = data.get('current_job')
+        if current_job and worker_id not in coordinator.worker_jobs:
+            file_id = current_job['file_id']
+            progress = current_job.get('progress_percent', 0)
+            
+            logger.info(f"Recovering job {file_id} for reconnected worker {worker_id} at {progress}% progress")
+            
+            # Update database to reflect current state
+            database.update_file_status(file_id, 'processing', 
+                                      progress_percent=progress,
+                                      assigned_worker_id=worker_id)
+            
+            # Update coordinator state
+            coordinator.worker_jobs[worker_id] = file_id
+            coordinator.workers[worker_id]['current_file'] = current_job['filename']
+            coordinator.workers[worker_id]['status'] = 'processing'
+        
         coordinator.update_worker_heartbeat(worker_id, data)
         return jsonify({'success': True})
     except Exception as e:
