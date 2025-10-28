@@ -356,6 +356,27 @@ header h1 {
     margin-top: 4px;
 }
 
+/* Priority Badges */
+.priority-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.7em;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: var(--accent-red);
+    color: white;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.worker-assigned-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.7em;
+    font-weight: 600;
+    background: var(--accent-purple);
+    color: white;
+}
+
 /* File List */
 .file-list {
     display: flex;

@@ -371,7 +371,9 @@ function renderFiles(files) {
                             <span>📁 ${escapeHtml(file.directory)}</span>
                         </div>
                     </div>
-                    <div style="display: flex; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        ${(file.priority > 0) ? '<div class="priority-badge">🚀 HIGH PRIORITY</div>' : ''}
+                        ${file.preferred_worker_id ? `<div class="worker-assigned-badge">👤 ${file.preferred_worker_id}</div>` : ''}
                         <div class="file-status-badge ${file.status}">${file.status}</div>
                         <div class="file-item-actions">
                             ${actions}
@@ -460,6 +462,7 @@ async function showPriorityModal(fileId) {
 }
 
 function selectWorker(workerId) {
+    console.log('selectWorker called with:', workerId);
     selectedWorkerId = workerId;
     
     // Update UI
@@ -471,6 +474,7 @@ function selectWorker(workerId) {
     
     // Enable confirm button
     document.getElementById('confirmBtn').disabled = false;
+    console.log('Worker selected:', selectedWorkerId);
 }
 
 function closePriorityModal() {
@@ -480,11 +484,15 @@ function closePriorityModal() {
 }
 
 async function confirmPriority() {
+    console.log('confirmPriority called', { selectedFileId, selectedWorkerId });
+    
     if (!selectedFileId || !selectedWorkerId) {
+        console.log('Missing fileId or workerId');
         showNotification('Please select a worker', 'error');
         return;
     }
     
+    console.log('Making API call...');
     try {
         const response = await fetch(`/api/file/${selectedFileId}/priority`, {
             method: 'POST',
@@ -492,18 +500,29 @@ async function confirmPriority() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                worker_id: selectedWorkerId,
-                priority: 'high'
+                preferred_worker_id: selectedWorkerId
             })
         });
         
+        console.log('Response status:', response.status);
         const result = await response.json();
+        console.log('API response:', result);
         
         if (result.success) {
-            showNotification('File pushed to top of queue!', 'success');
+            showNotification(`File pushed to top of queue${result.preferred_worker_id ? ` for ${result.preferred_worker_id}` : ''}!`, 'success');
+            
+            // Update the file in our local data if returned
+            if (result.file) {
+                const fileIndex = filesData.findIndex(f => f.id === selectedFileId);
+                if (fileIndex !== -1) {
+                    filesData[fileIndex] = result.file;
+                    filterAndRenderFiles();
+                }
+            }
+            
             closePriorityModal();
-            // Refresh the file list
-            loadFiles();
+            // Also refresh to get latest data
+            fetchInitialData();
         } else {
             showNotification(result.error || 'Failed to prioritize file', 'error');
         }

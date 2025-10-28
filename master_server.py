@@ -456,7 +456,6 @@ def set_file_priority_endpoint(file_id):
         
         # Validate worker exists if specified
         if preferred_worker_id:
-            coordinator = app.coordinator
             if preferred_worker_id not in coordinator.workers:
                 return jsonify({'error': f'Worker {preferred_worker_id} not found'}), 400
         
@@ -464,10 +463,18 @@ def set_file_priority_endpoint(file_id):
         priority = 1000  # High priority value
         
         # Use database method to set priority
-        db = app.database
-        db.set_file_priority(file_id, priority, preferred_worker_id)
+        database.set_file_priority(file_id, priority, preferred_worker_id)
         
-        return jsonify({'success': True, 'message': 'File priority set'})
+        # Get updated file info
+        updated_file = database.get_file_by_id(file_id)
+        
+        return jsonify({
+            'success': True, 
+            'message': 'File priority set',
+            'priority': priority,
+            'preferred_worker_id': preferred_worker_id,
+            'file': updated_file
+        })
     
     except Exception as e:
         logger.error(f"Error setting file priority: {e}")
