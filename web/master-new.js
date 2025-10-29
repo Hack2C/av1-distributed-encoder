@@ -221,7 +221,7 @@ function updateWorkers() {
         return `
             <div class="worker-card ${statusClass}">
                 <div class="worker-header">
-                    <div class="worker-name">${escapeHtml(workerId)}</div>
+                    <div class="worker-name" title="Full ID: ${escapeHtml(worker.id || workerId)}">${escapeHtml(worker.display_name || workerId)}</div>
                     <div class="worker-status ${statusClass}">${statusClass}</div>
                 </div>
                 <div class="worker-info">
@@ -232,6 +232,14 @@ function updateWorkers() {
                     <div class="worker-stat">
                         <div class="worker-stat-label">Version</div>
                         <div class="worker-stat-value">${escapeHtml(worker.version || 'N/A')}</div>
+                    </div>
+                    <div class="worker-stat">
+                        <div class="worker-stat-label">CPU Cores</div>
+                        <div class="worker-stat-value">${worker.capabilities?.cpu_count || 'N/A'}</div>
+                    </div>
+                    <div class="worker-stat">
+                        <div class="worker-stat-label">Total RAM</div>
+                        <div class="worker-stat-value">${worker.capabilities?.memory_total ? (worker.capabilities.memory_total / (1024*1024*1024)).toFixed(1) + ' GB' : 'N/A'}</div>
                     </div>
                     <div class="worker-stat">
                         <div class="worker-stat-label">CPU Usage</div>
@@ -373,7 +381,7 @@ function renderFiles(files) {
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                         ${(file.priority > 0) ? '<div class="priority-badge">🚀 HIGH PRIORITY</div>' : ''}
-                        ${file.preferred_worker_id ? `<div class="worker-assigned-badge">👤 ${file.preferred_worker_id}</div>` : ''}
+                        ${file.preferred_worker_display_name ? `<div class="worker-assigned-badge">👤 ${file.preferred_worker_display_name}</div>` : ''}
                         <div class="file-status-badge ${file.status}">${file.status}</div>
                         <div class="file-item-actions">
                             ${actions}

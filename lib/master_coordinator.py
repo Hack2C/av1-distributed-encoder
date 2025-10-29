@@ -5,6 +5,7 @@ Master Coordinator - Manages workers and job distribution
 import logging
 import threading
 import time
+import uuid
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -59,7 +60,8 @@ class MasterCoordinator:
         """Check worker health and mark jobs as failed if workers time out"""
         with self.lock:
             now = datetime.now()
-            timeout = timedelta(seconds=30)
+            # Increased timeout to 5 minutes - workers send progress every few seconds during active transcoding
+            timeout = timedelta(minutes=5)
             
             for worker_id, worker in list(self.workers.items()):
                 last_seen = datetime.fromisoformat(worker['last_seen'])
@@ -108,7 +110,7 @@ class MasterCoordinator:
             for wid, worker in self.workers.items():
                 if worker['hostname'] == hostname:
                     existing_worker_id = wid
-                    logger.info(f"Worker {wid} ({hostname}) reconnecting")
+                    logger.info(f"Worker {worker.get('display_name', wid)} ({hostname}) reconnecting")
                     break
             
             # Use existing worker ID or generate new one
@@ -129,10 +131,13 @@ class MasterCoordinator:
                         logger.info(f"Found orphaned processing file {file_record['id']} assigned to reconnecting worker {worker_id}")
                         # Will be recovered via heartbeat with current_job info
             else:
-                # Generate new worker ID
-                worker_id = f"worker-{len(self.workers) + 1}"
+                # Generate UUID-based internal ID and human-readable display name
+                worker_id = str(uuid.uuid4())
+                display_name = f"worker-{len(self.workers) + 1}"
+                
                 self.workers[worker_id] = {
                     'id': worker_id,
+                    'display_name': display_name,
                     'hostname': hostname,
                     'capabilities': capabilities,
                     'version': version,
@@ -144,7 +149,8 @@ class MasterCoordinator:
                     'total_bytes_processed': 0
                 }
             
-            logger.info(f"Registered worker: {worker_id} ({hostname})")
+            display_name = self.workers[worker_id].get('display_name', worker_id)
+            logger.info(f"Registered worker: {display_name} ({hostname}) [ID: {worker_id[:8]}...]")
             return worker_id
     
     def update_worker_heartbeat(self, worker_id, data):
@@ -187,7 +193,8 @@ class MasterCoordinator:
             self.workers[worker_id]['status'] = 'processing'
             self.workers[worker_id]['current_file'] = file_record['filename']
             
-            logger.info(f"Assigned job {file_id} ({file_record['filename']}) to {worker_id}")
+            display_name = self.workers[worker_id].get('display_name', worker_id[:8])
+            logger.info(f"Assigned job {file_id} ({file_record['filename']}) to {display_name}")
             
             return {
                 'file_id': file_id,
@@ -218,6 +225,8 @@ class MasterCoordinator:
         # Update worker info
         with self.lock:
             if worker_id in self.workers:
+                # CRITICAL FIX: Update last_seen on progress reports to prevent false timeouts
+                self.workers[worker_id]['last_seen'] = datetime.now().isoformat()
                 self.workers[worker_id]['current_progress'] = percent
                 self.workers[worker_id]['current_speed'] = speed
                 self.workers[worker_id]['current_eta'] = eta
@@ -268,6 +277,13 @@ class MasterCoordinator:
         """Get all workers as dictionary keyed by worker ID"""
         with self.lock:
             return dict(self.workers)
+    
+    def get_worker_display_name(self, worker_id):
+        """Get human-readable display name for a worker"""
+        with self.lock:
+            if worker_id in self.workers:
+                return self.workers[worker_id].get('display_name', f'worker-{worker_id[:8]}')
+            return f'worker-{worker_id[:8] if worker_id else "unknown"}'
     
     def get_worker_status(self):
         """Get worker status summary"""

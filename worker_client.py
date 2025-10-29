@@ -86,6 +86,76 @@ class WorkerClient:
         except Exception as e:
             logger.error(f"Error cleaning temp directory: {e}", exc_info=True)
     
+    def _retry_failed_uploads(self):
+        """Check for and retry failed uploads"""
+        try:
+            failed_uploads_dir = Path(self.config.get_temp_directory()) / 'failed_uploads'
+            if not failed_uploads_dir.exists():
+                return
+            
+            # Look for transcoded files with metadata
+            for transcoded_file in failed_uploads_dir.glob('*.mkv'):
+                metadata_file = transcoded_file.with_suffix('.metadata')
+                if not metadata_file.exists():
+                    continue
+                
+                # Read metadata
+                metadata = {}
+                try:
+                    with open(metadata_file, 'r') as f:
+                        for line in f:
+                            if '=' in line:
+                                key, value = line.strip().split('=', 1)
+                                metadata[key] = value
+                except Exception as e:
+                    logger.warning(f"Failed to read metadata for {transcoded_file}: {e}")
+                    continue
+                
+                job_id = metadata.get('job_id')
+                original_path = metadata.get('original_path')
+                failed_at = metadata.get('failed_at')
+                
+                if not job_id or not original_path:
+                    logger.warning(f"Incomplete metadata for {transcoded_file}")
+                    continue
+                
+                logger.info(f"Retrying upload for job {job_id} (failed at {failed_at})")
+                
+                try:
+                    # Attempt to upload the file
+                    with open(transcoded_file, 'rb') as f:
+                        files = {'file': (transcoded_file.name, f, 'application/octet-stream')}
+                        response = requests.post(
+                            f"{self.master_url}/api/file/{job_id}/result",
+                            files=files,
+                            timeout=300  # 5 minutes for upload
+                        )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        if result.get('success'):
+                            logger.info(f"Successfully retried upload for job {job_id}")
+                            
+                            # Clean up the failed upload files
+                            transcoded_file.unlink()
+                            metadata_file.unlink()
+                            
+                            # Report completion
+                            output_size = result.get('new_size', 0)
+                            original_size = result.get('original_size', 0)
+                            self.report_completion(int(job_id), output_size, original_size)
+                            
+                        else:
+                            logger.warning(f"Master rejected retry upload for job {job_id}: {result.get('error')}")
+                    else:
+                        logger.warning(f"Retry upload failed for job {job_id}: HTTP {response.status_code}")
+                
+                except Exception as e:
+                    logger.warning(f"Failed to retry upload for job {job_id}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error during failed upload retry: {e}", exc_info=True)
+    
     def _init_quality_lookup(self):
         """Initialize quality lookup - fetch from master or use local config"""
         try:
@@ -366,6 +436,7 @@ class WorkerClient:
             # Transcode with progress callback
             self.report_progress(file_id, 0)  # Start at 0%
             temp_output = self._transcode(temp_input, metadata, settings, file_id)
+            upload_failed = False  # Track upload status for cleanup
             
             if not temp_output or not temp_output.exists():
                 raise Exception("Transcoding failed")
@@ -416,8 +487,10 @@ class WorkerClient:
                             # Mark job as completed but not reported for heartbeat recovery
                             self.job_completed_but_not_reported = True
                     else:
+                        upload_failed = True
                         raise Exception(f"Master reported upload failure: {result.get('error', 'Unknown error')}")
                 else:
+                    upload_failed = True
                     raise Exception(f"Failed to upload result: HTTP {response.status_code}")
             
             else:
@@ -446,12 +519,35 @@ class WorkerClient:
                 if temp_input.exists():
                     logger.debug(f"Removing temp input: {temp_input}")
                     temp_input.unlink()
-                # Only delete temp_output if it still exists (not already deleted after successful upload)
+                # Preserve transcoded files if upload failed
                 if 'temp_output' in locals() and temp_output.exists():
-                    logger.warning(f"Removing temp output (upload may have failed): {temp_output}")
-                    temp_output.unlink()
-                
-                # Clean up any other files left in temp directory
+                    # Check if we're in an error state (upload failed)
+                    if 'upload_failed' in locals() and upload_failed:
+                        # Move to failed_uploads directory instead of deleting
+                        failed_uploads_dir = Path(self.config.get_temp_directory()) / 'failed_uploads'
+                        failed_uploads_dir.mkdir(exist_ok=True)
+                        
+                        # Include job ID and timestamp in filename
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        failed_filename = f"job_{file_id}_{timestamp}_{temp_output.name}"
+                        failed_path = failed_uploads_dir / failed_filename
+                        
+                        logger.warning(f"Upload failed - preserving transcoded file: {temp_output} -> {failed_path}")
+                        temp_output.rename(failed_path)
+                        
+                        # Create metadata file with job info
+                        metadata_path = failed_path.with_suffix('.metadata')
+                        with open(metadata_path, 'w') as f:
+                            f.write(f"job_id={file_id}\n")
+                            f.write(f"original_path={file_path}\n")
+                            f.write(f"failed_at={datetime.now().isoformat()}\n")
+                            f.write(f"worker_id={self.worker_id}\n")
+                        
+                        logger.info(f"Transcoded file preserved for retry: {failed_path}")
+                    else:
+                        # Normal cleanup - file was successfully processed or upload succeeded
+                        logger.debug(f"Removing temp output: {temp_output}")
+                        temp_output.unlink()                # Clean up any other files left in temp directory
                 temp_dir = Path(self.config.get_temp_directory())
                 if temp_dir.exists():
                     for item in temp_dir.iterdir():
@@ -618,6 +714,10 @@ class WorkerClient:
         heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
         heartbeat_thread.start()
         
+        # Check for failed uploads to retry
+        logger.info("Checking for failed uploads to retry...")
+        self._retry_failed_uploads()
+        
         logger.info("Worker started, waiting for jobs...")
         
         while not self.shutdown_event.is_set() and self.is_running:
@@ -638,12 +738,20 @@ class WorkerClient:
     
     def _heartbeat_loop(self):
         """Background thread for sending heartbeats"""
+        retry_counter = 0
         while not self.shutdown_event.is_set() and self.is_running:
             try:
                 # Call cpu_percent to update for next heartbeat
                 psutil.cpu_percent(interval=None)
                 time.sleep(10)  # Wait 10 seconds
                 self.send_heartbeat()
+                
+                # Check for failed uploads to retry every 10 heartbeats (100 seconds)
+                retry_counter += 1
+                if retry_counter >= 10:
+                    retry_counter = 0
+                    self._retry_failed_uploads()
+                    
             except Exception as e:
                 logger.warning(f"Heartbeat loop error: {e}")
                 time.sleep(10)

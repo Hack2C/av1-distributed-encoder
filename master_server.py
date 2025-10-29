@@ -88,16 +88,31 @@ def api_status():
         stats = database.get_statistics()
         files = database.get_all_files()
         
-        # Get workers as dict keyed by worker_id
+        # Get workers as dict keyed by worker_id (use display names as keys for human readability)
         workers_dict = {}
         for worker in coordinator.get_workers():
-            workers_dict[worker['id']] = worker
+            display_name = worker.get('display_name', worker['id'][:8])
+            worker_info = dict(worker)
+            worker_info['display_name'] = display_name
+            workers_dict[display_name] = worker_info
+        
+        # Enhance files with worker display names
+        enhanced_files = []
+        for file_record in files:
+            enhanced_file = dict(file_record)
+            if file_record.get('assigned_worker_id'):
+                display_name = coordinator.get_worker_display_name(file_record['assigned_worker_id'])
+                enhanced_file['assigned_worker_display_name'] = display_name
+            if file_record.get('preferred_worker_id'):
+                display_name = coordinator.get_worker_display_name(file_record['preferred_worker_id'])
+                enhanced_file['preferred_worker_display_name'] = display_name
+            enhanced_files.append(enhanced_file)
         
         return jsonify({
             'success': True,
             'statistics': stats,
             'workers': workers_dict,
-            'files': files,
+            'files': enhanced_files,
             'last_update': datetime.now().isoformat()
         })
     except Exception as e:
@@ -400,6 +415,17 @@ def api_file_result_upload(file_id):
             logger.error(f"File {file_id} not found in database")
             return jsonify({'success': False, 'error': 'File not found'}), 404
         
+        # Check job status - allow upload for processing or failed jobs (worker completed despite network issues)
+        file_status = file_info.get('status', 'pending')
+        logger.info(f"Upload attempt for file {file_id} with status: {file_status}")
+        
+        if file_status == 'completed':
+            logger.warning(f"Upload attempt for already completed file {file_id} - ignoring")
+            return jsonify({'success': True, 'message': 'File already completed'}), 200
+        elif file_status not in ['processing', 'failed']:
+            logger.error(f"Invalid upload attempt for file {file_id} with status {file_status}")
+            return jsonify({'success': False, 'error': f'Invalid job status: {file_status}'}), 400
+        
         # Check if file was uploaded
         if 'file' not in request.files:
             logger.error(f"No file provided in upload request for file {file_id}")
@@ -411,12 +437,24 @@ def api_file_result_upload(file_id):
         logger.info(f"Receiving transcoded file {file_id} for {original_path}")
         
         # Ensure target directory exists and is writable
+        logger.info(f"Target directory: {original_path.parent}")
         original_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Check directory permissions before saving
+        if not os.access(original_path.parent, os.W_OK):
+            raise Exception(f"Directory not writable: {original_path.parent}")
         
         # Save directly to final location with .av1 extension
         av1_path = original_path.with_suffix('.av1')
         logger.info(f"Saving uploaded file to: {av1_path}")
+        
+        # Check if we have enough disk space
+        stat = os.statvfs(original_path.parent)
+        free_space = stat.f_frsize * stat.f_bavail
+        logger.info(f"Available disk space: {free_space / 1_000_000_000:.2f} GB")
+        
         uploaded_file.save(str(av1_path))
+        logger.info(f"File saved successfully: {av1_path.stat().st_size} bytes")
         
         # Set correct ownership on the .av1 file
         uid = int(os.environ.get('PUID', '1000'))
@@ -458,6 +496,12 @@ def api_file_result_upload(file_id):
         savings_mb = (original_size - new_size) / 1_000_000
         savings_percent = ((original_size - new_size) / original_size * 100) if original_size > 0 else 0
         
+        # Mark job as completed in database
+        database.update_file_status(file_id, 'completed', 
+                                   completed_at=datetime.now().isoformat(),
+                                   original_size=original_size,
+                                   compressed_size=new_size)
+        
         logger.info(f"Transcoding complete: {savings_percent:.1f}% savings ({savings_mb:.1f} MB)")
         
         return jsonify({
@@ -469,6 +513,24 @@ def api_file_result_upload(file_id):
     
     except Exception as e:
         logger.error(f"Error receiving file result for file {file_id}: {e}", exc_info=True)
+        
+        # Log additional diagnostics for troubleshooting
+        try:
+            if file_info:
+                original_path = Path(file_info['path'])
+                logger.error(f"Upload failure details:")
+                logger.error(f"  Original path: {original_path}")
+                logger.error(f"  Parent exists: {original_path.parent.exists()}")
+                logger.error(f"  Parent writable: {os.access(original_path.parent, os.W_OK)}")
+                
+                # Check disk space
+                stat = os.statvfs(original_path.parent)
+                free_space = stat.f_frsize * stat.f_bavail
+                logger.error(f"  Free disk space: {free_space / 1_000_000_000:.2f} GB")
+                
+        except Exception as diag_error:
+            logger.error(f"Failed to get upload diagnostics: {diag_error}")
+        
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # Job Control Endpoints
