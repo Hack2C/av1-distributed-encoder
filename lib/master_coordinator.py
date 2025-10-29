@@ -146,7 +146,8 @@ class MasterCoordinator:
                     'last_seen': datetime.now().isoformat(),
                     'jobs_completed': 0,
                     'jobs_failed': 0,
-                    'total_bytes_processed': 0
+                    'total_bytes_processed': 0,
+                    'fade_out': False
                 }
             
             display_name = self.workers[worker_id].get('display_name', worker_id)
@@ -174,6 +175,12 @@ class MasterCoordinator:
         """Assign next job to worker"""
         with self.lock:
             if worker_id not in self.workers:
+                return None
+            
+            # Check if worker is faded out (should not receive new jobs)
+            if self.workers[worker_id].get('fade_out', False):
+                display_name = self.workers[worker_id].get('display_name', worker_id[:8])
+                logger.debug(f"Worker {display_name} is faded out, not assigning new jobs")
                 return None
             
             # Get next pending file (respecting priority and preferred worker)
@@ -319,3 +326,15 @@ class MasterCoordinator:
                     })
             
             return jobs
+    
+    def toggle_worker_fade_out(self, worker_id):
+        """Toggle fade out status for a worker"""
+        with self.lock:
+            if worker_id in self.workers:
+                current_state = self.workers[worker_id].get('fade_out', False)
+                self.workers[worker_id]['fade_out'] = not current_state
+                display_name = self.workers[worker_id].get('display_name', worker_id)
+                new_state = self.workers[worker_id]['fade_out']
+                logger.info(f"Worker {display_name} fade out: {'enabled' if new_state else 'disabled'}")
+                return {'success': True, 'fade_out': new_state, 'display_name': display_name}
+            return {'success': False, 'error': 'Worker not found'}

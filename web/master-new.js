@@ -218,11 +218,25 @@ function updateWorkers() {
             `;
         }
         
+        const fadeOutClass = worker.fade_out ? 'faded-out' : '';
+        const fadeOutIndicator = worker.fade_out ? '<span class="fade-out-indicator">⏸️ FADING OUT</span>' : '';
+        const fadeOutButton = `<button class="btn btn-small ${worker.fade_out ? 'btn-success' : 'btn-warning'}" 
+                                      onclick="toggleWorkerFadeOut('${worker.id || workerId}', '${escapeHtml(worker.display_name || workerId)}')"
+                                      title="${worker.fade_out ? 'Enable worker for new jobs' : 'Prevent worker from taking new jobs'}">
+                                  ${worker.fade_out ? '▶️ Enable' : '⏸️ Fade Out'}
+                              </button>`;
+        
         return `
-            <div class="worker-card ${statusClass}">
+            <div class="worker-card ${statusClass} ${fadeOutClass}">
                 <div class="worker-header">
-                    <div class="worker-name" title="Full ID: ${escapeHtml(worker.id || workerId)}">${escapeHtml(worker.display_name || workerId)}</div>
-                    <div class="worker-status ${statusClass}">${statusClass}</div>
+                    <div class="worker-name-container">
+                        <div class="worker-name" title="Full ID: ${escapeHtml(worker.id || workerId)}">${escapeHtml(worker.display_name || workerId)}</div>
+                        ${fadeOutIndicator}
+                    </div>
+                    <div class="worker-controls">
+                        <div class="worker-status ${statusClass}">${statusClass}</div>
+                        ${fadeOutButton}
+                    </div>
                 </div>
                 <div class="worker-info">
                     <div class="worker-stat">
@@ -537,6 +551,33 @@ async function confirmPriority() {
     } catch (error) {
         console.error('Error setting priority:', error);
         showNotification('Failed to prioritize file', 'error');
+    }
+}
+
+// Worker Fade Out Control
+async function toggleWorkerFadeOut(workerId, displayName) {
+    try {
+        const response = await fetch(`/api/worker/${workerId}/fade_out`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            const action = result.fade_out ? 'faded out' : 'enabled';
+            showNotification(`Worker ${displayName} ${action}`, 'success');
+            
+            // Refresh worker data
+            fetchInitialData();
+        } else {
+            showNotification(result.error || 'Failed to toggle worker fade out', 'error');
+        }
+    } catch (error) {
+        console.error('Error toggling worker fade out:', error);
+        showNotification('Failed to toggle worker fade out', 'error');
     }
 }
 

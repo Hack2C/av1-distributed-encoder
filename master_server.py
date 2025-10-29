@@ -260,6 +260,18 @@ def api_worker_heartbeat(worker_id):
         logger.error(f"Error processing heartbeat: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/worker/<worker_id>/fade_out', methods=['POST'])
+def api_worker_fade_out(worker_id):
+    """Toggle fade out status for a worker"""
+    try:
+        result = coordinator.toggle_worker_fade_out(worker_id)
+        if result['success']:
+            logger.info(f"Worker fade out toggled: {result['display_name']} -> {'enabled' if result['fade_out'] else 'disabled'}")
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error toggling worker fade out: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/config/quality_lookup.json')
 def api_config_quality_lookup():
     """Serve quality lookup JSON to workers"""
