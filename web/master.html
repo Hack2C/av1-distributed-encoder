@@ -3,227 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AV1 Master Transcoding Server</title>
+    <title>AV1 Transcoding Master Server</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        .worker-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .worker-card {
-            background: #2c3e50;
-            border-radius: 8px;
-            padding: 20px;
-            border-left: 4px solid #3498db;
-        }
-        
-        .worker-card.offline {
-            border-left-color: #95a5a6;
-            opacity: 0.7;
-        }
-        
-        .worker-card.processing {
-            border-left-color: #f39c12;
-        }
-        
-        .worker-card.idle {
-            border-left-color: #27ae60;
-        }
-        
-        .worker-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-        
-        .worker-name {
-            font-size: 1.2em;
-            font-weight: bold;
-            color: #ecf0f1;
-        }
-        
-        .worker-status {
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 0.85em;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .worker-status.idle {
-            background: #27ae60;
-            color: white;
-        }
-        
-        .worker-status.processing {
-            background: #f39c12;
-            color: white;
-        }
-        
-        .worker-status.offline {
-            background: #95a5a6;
-            color: white;
-        }
-        
-        .worker-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        
-        .worker-stat {
-            background: #34495e;
-            padding: 10px;
-            border-radius: 4px;
-        }
-        
-        .worker-stat-label {
-            font-size: 0.8em;
-            color: #95a5a6;
-            margin-bottom: 4px;
-        }
-        
-        .worker-stat-value {
-            font-size: 1.1em;
-            font-weight: bold;
-            color: #ecf0f1;
-        }
-        
-        .worker-progress {
-            margin-top: 15px;
-        }
-        
-        .worker-current-job {
-            font-size: 0.9em;
-            color: #bdc3c7;
-            margin-bottom: 8px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        
-        .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 30px;
-        }
-        
-        .summary-card {
-            background: #2c3e50;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }
-        
-        .summary-label {
-            font-size: 0.9em;
-            color: #95a5a6;
-            margin-bottom: 8px;
-        }
-        
-        .summary-value {
-            font-size: 2em;
-            font-weight: bold;
-            color: #ecf0f1;
-        }
-        
-        .summary-value.success {
-            color: #27ae60;
-        }
-        
-        .summary-value.warning {
-            color: #f39c12;
-        }
-        
-        .summary-value.danger {
-            color: #e74c3c;
-        }
-        
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        
-        .section-title {
-            font-size: 1.5em;
-            font-weight: bold;
-            color: #ecf0f1;
-        }
-    </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎬 AV1 Master Transcoding Server</h1>
-        
-        <!-- Overall Summary -->
-        <div class="summary-grid">
-            <div class="summary-card">
-                <div class="summary-label">Active Workers</div>
-                <div class="summary-value success" id="active-workers">0</div>
+        <!-- Header -->
+        <header>
+            <h1>🎬 AV1 Transcoding Server</h1>
+            <div class="header-actions">
+                <button id="scanBtn" class="btn btn-primary">
+                    <span class="icon">🔍</span> Scan Library
+                </button>
+                <button id="refreshBtn" class="btn btn-secondary">
+                    <span class="icon">🔄</span> Refresh
+                </button>
             </div>
-            <div class="summary-card">
-                <div class="summary-label">Total Jobs</div>
-                <div class="summary-value" id="total-jobs">0</div>
+        </header>
+
+        <!-- Statistics Dashboard -->
+        <section class="dashboard">
+            <div class="stat-card">
+                <div class="stat-icon">📊</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="totalFiles">0</div>
+                    <div class="stat-label">Total Files</div>
+                </div>
             </div>
-            <div class="summary-card">
-                <div class="summary-label">Completed</div>
-                <div class="summary-value success" id="completed-jobs">0</div>
+            <div class="stat-card">
+                <div class="stat-icon">⏳</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="pendingFiles">0</div>
+                    <div class="stat-label">Pending</div>
+                </div>
             </div>
-            <div class="summary-card">
-                <div class="summary-label">Processing</div>
-                <div class="summary-value warning" id="processing-jobs">0</div>
+            <div class="stat-card">
+                <div class="stat-icon">⚙️</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="processingFiles">0</div>
+                    <div class="stat-label">Processing</div>
+                </div>
             </div>
-            <div class="summary-card">
-                <div class="summary-label">Failed</div>
-                <div class="summary-value danger" id="failed-jobs">0</div>
+            <div class="stat-card">
+                <div class="stat-icon">✅</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="completedFiles">0</div>
+                    <div class="stat-label">Completed</div>
+                </div>
             </div>
-            <div class="summary-card">
-                <div class="summary-label">Total Savings</div>
-                <div class="summary-value success" id="total-savings">0%</div>
+            <div class="stat-card">
+                <div class="stat-icon">💾</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="totalSavings">0 GB</div>
+                    <div class="stat-label">Space Saved</div>
+                </div>
             </div>
-        </div>
-        
+            <div class="stat-card">
+                <div class="stat-icon">⏱️</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="estimatedTime">--:--</div>
+                    <div class="stat-label">Est. Remaining</div>
+                </div>
+            </div>
+        </section>
+
         <!-- Workers Section -->
-        <div class="section-header">
-            <h2 class="section-title">Workers</h2>
-        </div>
-        <div class="worker-grid" id="workers-container">
-            <!-- Workers will be dynamically inserted here -->
-        </div>
-        
-        <!-- Queue Section -->
-        <div class="section-header">
-            <h2 class="section-title">Job Queue</h2>
-        </div>
-        <div class="table-container">
-            <table id="queue-table">
-                <thead>
-                    <tr>
-                        <th>Directory</th>
-                        <th>Filename</th>
-                        <th>Size</th>
-                        <th>Resolution</th>
-                        <th>Status</th>
-                        <th>Progress</th>
-                        <th>Worker</th>
-                        <th>Savings</th>
-                    </tr>
-                </thead>
-                <tbody id="queue-body">
-                    <!-- Queue items will be inserted here -->
-                </tbody>
-            </table>
+        <section class="section">
+            <h2>Workers</h2>
+            <div class="workers-grid" id="workersGrid">
+                <div class="empty-state">No workers connected</div>
+            </div>
+        </section>
+
+        <!-- File Queue Section -->
+        <section class="section">
+            <div class="section-header">
+                <h2>File Queue</h2>
+                <div class="filters">
+                    <select id="statusFilter" class="filter-select">
+                        <option value="all">All Status</option>
+                        <option value="pending">Pending</option>
+                        <option value="processing">Processing</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                    <input type="text" id="searchInput" class="search-input" placeholder="Search files...">
+                </div>
+            </div>
+            
+            <div class="file-list" id="fileList">
+                <div class="empty-state">No files in queue</div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Priority Modal -->
+    <div id="priorityModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🚀 Push to Top of Queue</h3>
+                <span class="modal-close" onclick="closePriorityModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Select a worker to prioritize this file:</p>
+                <div id="workerSelection" class="worker-selection">
+                    <div class="worker-option loading">Loading workers...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closePriorityModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmPriority()" id="confirmBtn" disabled>Push to Top</button>
+            </div>
         </div>
     </div>
-    
+
+    <!-- Socket.IO -->
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="master.js"></script>
 </body>

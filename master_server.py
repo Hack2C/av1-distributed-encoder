@@ -74,7 +74,7 @@ def init_components():
 @app.route('/')
 def index():
     """Serve main web interface"""
-    return app.send_static_file('master-new.html')
+    return app.send_static_file('master.html')
 
 @app.route('/old')
 def old_ui():

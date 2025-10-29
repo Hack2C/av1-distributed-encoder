@@ -561,12 +561,10 @@ av1/
 │   └── web_api.py              # Flask API routes
 │
 └── web/
-    ├── master-new.html         # Modern web interface (default)
-    ├── master-new.js           # Modern UI JavaScript
-    ├── style-new.css           # Modern UI styles
-    ├── master.html             # Legacy interface
-    ├── master.js               # Legacy JavaScript
-    └── style.css               # Legacy styles
+    ├── index.html              # Service status page
+    ├── master.html             # Master server web interface
+    ├── master.js               # Web interface JavaScript  
+    └── style.css               # Web interface styles
 ```
 
 ## 🔐 Security Considerations

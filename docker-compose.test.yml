@@ -37,7 +37,6 @@ services:
       - MEDIA_DIRS=
       - FILE_DISTRIBUTION_MODE=true
       - TEMP_DIR=/tmp/av1_transcoding
-      - PRESERVE_MODE=false
       - SVT_AV1_PRESET=0
       - PUID=1000
       - PGID=1000
