@@ -484,12 +484,12 @@ class TranscodingEngine:
             output_path.rename(final_path)
             logger.info(f"Renamed transcoded to original name: {final_path}")
             
-            # Delete backup if not in testing mode
-            if not self.config.is_testing_mode():
+            # Delete backup if not in preserve mode
+            if not self.config.is_preserve_mode():
                 backup_path.unlink()
                 logger.info(f"Deleted backup: {backup_path}")
             else:
-                logger.info(f"Testing mode: keeping backup {backup_path}")
+                logger.info(f"Preserve mode: keeping backup {backup_path}")
         
         except Exception as e:
             logger.error(f"Failed to replace original file: {e}", exc_info=True)

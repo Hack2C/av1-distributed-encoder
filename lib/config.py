@@ -44,9 +44,12 @@ class Config:
         if os.getenv('TEMP_DIR'):
             self.config['temp_directory'] = os.getenv('TEMP_DIR')
         
-        # Testing mode
-        if os.getenv('TESTING_MODE'):
-            self.config['testing_mode'] = os.getenv('TESTING_MODE').lower() in ('true', '1', 'yes')
+        # Preserve mode (with backward compatibility for TESTING_MODE)
+        if os.getenv('PRESERVE_MODE'):
+            self.config['preserve_mode'] = os.getenv('PRESERVE_MODE').lower() in ('true', '1', 'yes')
+        elif os.getenv('TESTING_MODE'):
+            # Backward compatibility
+            self.config['preserve_mode'] = os.getenv('TESTING_MODE').lower() in ('true', '1', 'yes')
         
         # Web port
         if os.getenv('WEB_PORT'):
@@ -97,9 +100,13 @@ class Config:
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
     
+    def is_preserve_mode(self):
+        """Check if running in preserve mode (keeps .bak files instead of deleting originals)"""
+        return self.get('preserve_mode', True)
+    
     def is_testing_mode(self):
-        """Check if running in testing mode"""
-        return self.get('testing_mode', True)
+        """Deprecated: Use is_preserve_mode() instead. Kept for backward compatibility."""
+        return self.is_preserve_mode()
     
     def get_video_extensions(self):
         """Get list of video file extensions to process"""

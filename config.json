@@ -5,7 +5,7 @@
     "/home/wieczorek/av1/TestLib"
   ],
   "temp_directory": "/tmp/av1_transcoding",
-  "testing_mode": true,
+  "preserve_mode": true,
   "process_priority": {
     "nice": 19,
     "ionice_class": 3

@@ -77,7 +77,7 @@ class TranscodingService:
         port = self.config.get('web_server.port', 8080)
         
         logger.info(f"Starting web interface at http://{host}:{port}")
-        logger.info(f"Testing mode: {self.config.get('testing_mode', True)}")
+        logger.info(f"Preserve mode: {self.config.get('preserve_mode', True)}")
         
         try:
             self.socketio.run(self.app, host=host, port=port, debug=False)

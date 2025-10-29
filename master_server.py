@@ -496,10 +496,10 @@ def api_file_result_upload(file_id):
         # Set correct ownership on final file
         os.chown(str(original_path), uid, gid)
         
-        # Remove backup if not in testing mode
-        if not config.is_testing_mode():
+        # Remove backup if not in preserve mode
+        if not config.is_preserve_mode():
             if backup_path.exists():
-                logger.info(f"Removing backup (not in test mode): {backup_path}")
+                logger.info(f"Removing backup (not in preserve mode): {backup_path}")
                 backup_path.unlink()
         
         logger.info(f"File replaced: {original_path}")

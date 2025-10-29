@@ -27,7 +27,7 @@ services:
       - MEDIA_DIRS=/media/Movies,/media/TV,/media/TestLib
       - TEMP_DIR=/tmp/av1_transcoding
       - WEB_PORT=8090
-      - TESTING_MODE=true
+      - PRESERVE_MODE=true
       
       # Optional: SVT-AV1 Settings
       - SVT_AV1_PRESET=0
