@@ -44,7 +44,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Expose web port
 EXPOSE 8090
 
-# Use entrypoint for SMB mounting
+# Use entrypoint for user switching and SMB mounting
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Default command (can be overridden in docker-compose)
