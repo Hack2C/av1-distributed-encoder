@@ -511,8 +511,9 @@ def api_file_result_upload(file_id):
         # Mark job as completed in database
         database.update_file_status(file_id, 'completed', 
                                    completed_at=datetime.now().isoformat(),
-                                   original_size=original_size,
-                                   compressed_size=new_size)
+                                   output_size_bytes=new_size,
+                                   savings_bytes=(original_size - new_size),
+                                   savings_percent=savings_percent)
         
         logger.info(f"Transcoding complete: {savings_percent:.1f}% savings ({savings_mb:.1f} MB)")
         
