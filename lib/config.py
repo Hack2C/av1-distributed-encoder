@@ -71,6 +71,12 @@ class Config:
                 self.config['process_priority']['nice'] = int(os.getenv('NICE_LEVEL'))
             if os.getenv('IONICE_CLASS'):
                 self.config['process_priority']['ionice_class'] = int(os.getenv('IONICE_CLASS'))
+        
+        # File processing order
+        if os.getenv('FILE_ORDER'):
+            if 'processing' not in self.config:
+                self.config['processing'] = {}
+            self.config['processing']['file_order'] = os.getenv('FILE_ORDER').lower()
     
     def get(self, key, default=None):
         """
@@ -111,6 +117,15 @@ class Config:
     def get_video_extensions(self):
         """Get list of video file extensions to process"""
         return self.get('video_extensions', ['.mkv', '.mp4', '.avi', '.mov'])
+    
+    def get_file_order(self):
+        """Get file processing order preference"""
+        order = self.get('processing.file_order', 'oldest')
+        # Valid options: 'oldest', 'newest', 'largest', 'smallest'
+        if order not in ['oldest', 'newest', 'largest', 'smallest']:
+            logger.warning(f"Invalid file order '{order}', defaulting to 'oldest'")
+            return 'oldest'
+        return order
     
     def reload(self):
         """Reload configuration from file"""

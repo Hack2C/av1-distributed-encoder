@@ -40,7 +40,7 @@ class TranscodingService:
     
     def __init__(self, config_path='config.json'):
         self.config = Config(config_path)
-        self.db = Database()
+        self.db = Database(config=self.config)
         self.scanner = MediaScanner(self.config, self.db)
         self.engine = TranscodingEngine(self.config, self.db, shutdown_event)
         

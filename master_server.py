@@ -62,7 +62,7 @@ def init_components():
     logger.info("Configuration loaded from config.json")
     
     db_path = os.environ.get('DB_PATH', '/data/transcoding.db')
-    database = Database(db_path)
+    database = Database(db_path, config)
     logger.info(f"Database initialized at {db_path}")
     
     scanner = MediaScanner(config, database)

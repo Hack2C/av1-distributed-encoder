@@ -429,6 +429,34 @@ class WorkerClient:
             if not metadata or not metadata.get('video'):
                 raise Exception("Failed to probe file or no video stream found")
             
+            # Check for dynamic HDR that cannot be preserved
+            video = metadata['video']
+            hdr_type = video.get('hdr', 'SDR')
+            has_dynamic_hdr = video.get('hdr_dynamic', False)
+            
+            # Skip Dolby Vision (always dynamic) and dynamic HDR10+
+            should_skip = False
+            skip_reason = ""
+            
+            if hdr_type == 'Dolby Vision':
+                should_skip = True
+                skip_reason = "Dolby Vision dynamic metadata cannot be preserved (quality protection)"
+            elif hdr_type == 'HDR10+' and has_dynamic_hdr:
+                should_skip = True  
+                skip_reason = "HDR10+ dynamic metadata cannot be preserved (quality protection)"
+            
+            if should_skip:
+                error_msg = f"Skipped: {skip_reason}"
+                logger.warning(f"Skipping file: Contains {hdr_type} - {skip_reason}")
+                
+                # Report as failed with skip reason
+                response = requests.put(f"{self.master_url}/api/file/{file_id}/complete", json={
+                    'success': False,
+                    'error': error_msg,
+                    'worker_id': self.worker_id
+                })
+                return
+            
             # Determine settings
             settings = self._determine_settings(metadata)
             logger.info(f"Encoding settings: CRF={settings['crf']}, Opus={settings['opus_bitrate']}k")
@@ -617,12 +645,13 @@ class WorkerClient:
         """Transcode file with progress reporting"""
         output_file = input_file.parent / f"{input_file.stem}_av1{input_file.suffix}"
         
-        # Build ffmpeg command
+        # Build ffmpeg command  
+        preset = str(self.config.get('transcoding.svt_av1_preset', 0))  # Default to 0 (highest quality)
         cmd = [
             'ffmpeg', '-i', str(input_file),
             '-map', '0',
             '-c:v', 'libsvtav1',
-            '-preset', '0',
+            '-preset', preset,
             '-crf', str(settings['crf']),
             '-c:a', 'libopus',
             '-b:a', f"{settings['opus_bitrate']}k",
@@ -631,8 +660,31 @@ class WorkerClient:
             '-y', str(output_file)
         ]
         
+        # Add HDR color parameters if needed
+        video_info = metadata.get('video', {})
+        hdr_type = video_info.get('hdr', 'SDR')
+        color_transfer = video_info.get('color_transfer', '')
+        color_space = video_info.get('color_space', '')
+        
+        if hdr_type in ['HDR10', 'HDR10+'] and color_transfer and color_space:
+            # Insert color parameters before output file for HDR content
+            color_params = [
+                '-color_primaries', 'bt2020',
+                '-color_trc', color_transfer,
+                '-colorspace', color_space
+            ]
+            # Insert before the output filename
+            cmd = cmd[:-2] + color_params + cmd[-2:]
+            logger.info(f"Added HDR color parameters for {hdr_type}: color_trc={color_transfer}, colorspace={color_space}")
+        
+        # Log encoding details for debugging
+        logger.info(f"Encoding {input_file.name}: HDR={hdr_type}, bitdepth={video_info.get('bitdepth', 8)}, preset={preset}, CRF={settings['crf']}")
+        
         import subprocess
         duration = metadata['format']['duration']
+        
+        # Log the FFmpeg command for debugging
+        logger.info(f"FFmpeg command: {' '.join(cmd)}")
         
         process = subprocess.Popen(
             cmd,
@@ -642,10 +694,13 @@ class WorkerClient:
             bufsize=1
         )
         
-        # Monitor progress
+        # Monitor progress and collect stderr
         last_report = 0
         current_fps = 0.0
+        stderr_lines = []
+        
         for line in process.stderr:
+            stderr_lines.append(line)
             if 'time=' in line:
                 try:
                     # Parse time
@@ -675,8 +730,88 @@ class WorkerClient:
         returncode = process.wait()
         
         if returncode != 0:
-            stderr = process.stderr.read()
-            raise Exception(f"FFmpeg failed with code {returncode}: {stderr}")
+            stderr_output = ''.join(stderr_lines)
+            logger.error(f"FFmpeg stderr output: {stderr_output}")
+            
+            # If it's error 234 and we used HDR parameters, try again without them
+            if returncode == 234 and hdr_type in ['HDR10', 'HDR10+'] and any('-color_trc' in str(c) for c in cmd):
+                logger.warning(f"FFmpeg error 234 with {hdr_type} parameters, retrying without color parameters...")
+                return self._transcode_fallback(input_file, metadata, settings, file_id)
+            
+            raise Exception(f"FFmpeg failed with code {returncode}: {stderr_output}")
+        
+        return output_file
+    
+    def _transcode_fallback(self, input_file, metadata, settings, file_id):
+        """Fallback transcoding without HDR parameters"""
+        output_file = input_file.parent / f"{input_file.stem}_av1{input_file.suffix}"
+        
+        # Build basic ffmpeg command without HDR parameters
+        preset = str(self.config.get('transcoding.svt_av1_preset', 0))  # Default to 0 (highest quality)
+        cmd = [
+            'ffmpeg', '-i', str(input_file),
+            '-map', '0',
+            '-c:v', 'libsvtav1',
+            '-preset', preset,
+            '-crf', str(settings['crf']),
+            '-c:a', 'libopus',
+            '-b:a', f"{settings['opus_bitrate']}k",
+            '-c:s', 'copy',
+            '-map_metadata', '0',
+            '-y', str(output_file)
+        ]
+        
+        import subprocess
+        duration = metadata['format']['duration']
+        
+        logger.info(f"Fallback FFmpeg command: {' '.join(cmd)}")
+        
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            bufsize=1
+        )
+        
+        # Monitor progress and collect stderr
+        last_report = 0
+        current_fps = 0.0
+        stderr_lines = []
+        
+        for line in process.stderr:
+            stderr_lines.append(line)
+            if 'time=' in line:
+                try:
+                    # Parse time
+                    time_str = line.split('time=')[1].split()[0]
+                    h, m, s = time_str.split(':')
+                    current_time = int(h) * 3600 + int(m) * 60 + float(s)
+                    percent = min(95, (current_time / duration * 100))
+                    
+                    # Parse speed (fps)
+                    if 'speed=' in line:
+                        speed_str = line.split('speed=')[1].split('x')[0].strip()
+                        speed_multiplier = float(speed_str)
+                        current_fps = speed_multiplier * 25
+                    
+                    # Calculate ETA
+                    remaining_time = duration - current_time
+                    eta_seconds = int(remaining_time / speed_multiplier) if speed_multiplier > 0 else 0
+                    
+                    # Report every 2 seconds
+                    if time.time() - last_report > 2:
+                        self.report_progress(file_id, percent, speed=current_fps, eta=eta_seconds)
+                        last_report = time.time()
+                except Exception as e:
+                    pass
+        
+        returncode = process.wait()
+        
+        if returncode != 0:
+            stderr_output = ''.join(stderr_lines)
+            logger.error(f"Fallback FFmpeg stderr output: {stderr_output}")
+            raise Exception(f"Fallback FFmpeg also failed with code {returncode}: {stderr_output}")
         
         return output_file
     

@@ -14,9 +14,26 @@ logger = logging.getLogger(__name__)
 class Database:
     """SQLite database for tracking file queue and statistics"""
     
-    def __init__(self, db_path='transcoding.db'):
+    def __init__(self, db_path='transcoding.db', config=None):
         self.db_path = db_path
+        self.config = config
         self._init_database()
+    
+    def _get_order_clause(self):
+        """Get ORDER BY clause based on configuration"""
+        if not self.config:
+            return "ORDER BY priority DESC, created_at ASC"
+        
+        file_order = self.config.get_file_order()
+        
+        if file_order == 'largest':
+            return "ORDER BY priority DESC, size_bytes DESC, created_at ASC"
+        elif file_order == 'smallest':
+            return "ORDER BY priority DESC, size_bytes ASC, created_at ASC"
+        elif file_order == 'newest':
+            return "ORDER BY priority DESC, created_at DESC"
+        else:  # oldest (default)
+            return "ORDER BY priority DESC, created_at ASC"
     
     def _init_database(self):
         """Initialize database schema"""
@@ -229,28 +246,32 @@ class Database:
     
     def get_next_pending_file(self, worker_id=None):
         """Get the next file to process, respecting priority and preferred worker"""
+        order_clause = self._get_order_clause()
+        
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
             if worker_id:
                 # First check for files specifically assigned to this worker
-                cursor.execute('''
+                query = f'''
                     SELECT * FROM files 
                     WHERE status = 'pending' AND preferred_worker_id = ?
-                    ORDER BY priority DESC, created_at ASC
+                    {order_clause}
                     LIMIT 1
-                ''', (worker_id,))
+                '''
+                cursor.execute(query, (worker_id,))
                 row = cursor.fetchone()
                 if row:
                     return dict(row)
             
             # Then get any pending file, prioritized
-            cursor.execute('''
+            query = f'''
                 SELECT * FROM files 
                 WHERE status = 'pending'
-                ORDER BY priority DESC, created_at ASC
+                {order_clause}
                 LIMIT 1
-            ''')
+            '''
+            cursor.execute(query)
             row = cursor.fetchone()
             return dict(row) if row else None
     

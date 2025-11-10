@@ -32,6 +32,13 @@ services:
       # Optional: SVT-AV1 Settings
       - SVT_AV1_PRESET=0
       
+      # Optional: Processing Order
+      # - oldest: Process by creation time (oldest first) - DEFAULT
+      # - newest: Process newest files first  
+      # - largest: Process biggest files first (maximize space savings)
+      # - smallest: Process smallest files first (quick wins)
+      # - FILE_ORDER=largest
+      
       # Optional: Process Priority
       - NICE_LEVEL=19
       - IONICE_CLASS=3

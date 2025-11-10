@@ -20,8 +20,14 @@ services:
       - MEDIA_DIRS=/media/TV,/media/Movies
       - TEMP_DIR=/tmp/av1_transcoding
       - WEB_PORT=8090
-      - PRESERVE_MODE=false
+      - PRESERVE_MODE=true
       - SVT_AV1_PRESET=0
+      # Processing order options:
+      # - oldest: Process by creation time (oldest first) - DEFAULT
+      # - newest: Process newest files first
+      # - largest: Process biggest files first (maximize space savings)
+      # - smallest: Process smallest files first (quick wins)
+      - FILE_ORDER=largest
       - PUID=1000
       - PGID=1000
     networks:

@@ -54,6 +54,8 @@ docker compose -f docker-compose.test.yml up -d- ✅ **Detailed Tracking** - Res
 
 http://localhost:8090- ✅ **HDR Support** - Automatic detection and preservation
 
+- ✅ **Configurable Processing Order** - Process files by oldest/newest/largest/smallest
+
 ```- ✅ **Multi-track** - Preserves all audio tracks, subtitles, and metadata
 
 
@@ -139,6 +141,8 @@ nano config.json
 - `TESTING_MODE`: Creates `.bak` backups instead of deleting originalspython3 transcode.py
 
 - `SVT_AV1_PRESET`: Encoder preset (0=slowest/best, 13=fastest/worst)```
+
+- `FILE_ORDER`: Processing order (`oldest`, `newest`, `largest`, `smallest`)
 
 - `PUID/PGID`: User/Group ID for file ownership (default: 1000)
 
