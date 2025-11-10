@@ -704,7 +704,7 @@ class WorkerClient:
         """Determine encoding settings based on metadata"""
         # Video settings
         codec = metadata['video'].get('codec', 'h264')
-        bitdepth = metadata['video'].get('bit_depth', 8)
+        bitdepth = metadata['video'].get('bitdepth', 8)
         hdr = metadata['video'].get('hdr', 'SDR')
         resolution = metadata['video']['resolution']
         bitrate = metadata['video'].get('bitrate', 0)
