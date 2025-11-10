@@ -3,7 +3,7 @@
 Master Server - Coordinates distributed transcoding across multiple workers
 """
 
-__version__ = "2.2.0"
+__version__ = "2.2.1"
 
 import os
 import sys

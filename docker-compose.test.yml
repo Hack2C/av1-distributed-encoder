@@ -29,7 +29,7 @@ services:
       # - smallest: Process smallest files first (quick wins)
       - FILE_ORDER=largest
       # Audio transcoding (set to 'true' to copy audio without transcoding)
-      # - SKIP_AUDIO_TRANSCODE=true
+      - SKIP_AUDIO_TRANSCODE=true
       # Skip files already encoded with AV1 (set to 'true' to skip AV1 files)
       - SKIP_AV1_FILES=true
       - PUID=1000

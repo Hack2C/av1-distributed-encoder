@@ -3,7 +3,7 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
-__version__ = "2.2.0"
+__version__ = "2.2.1"
 
 import os
 import sys
