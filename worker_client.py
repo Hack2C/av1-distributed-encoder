@@ -533,7 +533,7 @@ class WorkerClient:
             self.current_phase = 'processing'
             
             # Transcode with progress callback - start processing phase at 0%
-            self.report_progress(file_id, 0, status="Starting transcoding...", speed=None, eta=None)
+            self.report_progress(file_id, 0, status="Starting transcoding...", speed=0.0, eta=None)
             temp_output = self._transcode(temp_input, metadata, settings, file_id, transcoding_settings)
             upload_failed = False  # Track upload status for cleanup
             
@@ -916,12 +916,17 @@ class WorkerClient:
                     # Processing phase uses full 0-100% range
                     percent = min(100, (current_time / duration * 100))
                     
-                    # Parse speed (fps)
+                    # Parse actual fps from FFmpeg output
+                    current_fps = 0.0
+                    speed_multiplier = 1.0
+                    
+                    if 'fps=' in line:
+                        fps_str = line.split('fps=')[1].split()[0].strip()
+                        current_fps = float(fps_str)
+                    
                     if 'speed=' in line:
                         speed_str = line.split('speed=')[1].split('x')[0].strip()
                         speed_multiplier = float(speed_str)
-                        # fps = frame / elapsed_time, but we can estimate from speed multiplier
-                        current_fps = speed_multiplier * 25  # Rough estimate, 25fps * speed
                     
                     # Calculate ETA
                     remaining_time = duration - current_time
