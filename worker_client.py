@@ -3,7 +3,7 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
-__version__ = "2.2.3"
+__version__ = "2.2.4"
 
 import os
 import sys
@@ -711,16 +711,26 @@ class WorkerClient:
         
         # Determine bitrate category
         bitrate_mbps = bitrate / 1_000_000 if bitrate else 5
-        if bitrate_mbps < 2:
+        if bitrate_mbps < 1.5:
             bitrate_category = '1M'
-        elif bitrate_mbps < 6:
+        elif bitrate_mbps < 3:
+            bitrate_category = '2M'
+        elif bitrate_mbps < 5:
             bitrate_category = '4M'
-        elif bitrate_mbps < 15:
+        elif bitrate_mbps < 7:
+            bitrate_category = '6M'
+        elif bitrate_mbps < 9:
+            bitrate_category = '8M'
+        elif bitrate_mbps < 12:
             bitrate_category = '10M'
-        elif bitrate_mbps < 40:
-            bitrate_category = '25M'
+        elif bitrate_mbps < 17:
+            bitrate_category = '15M'
+        elif bitrate_mbps < 25:
+            bitrate_category = '20M'
+        elif bitrate_mbps < 35:
+            bitrate_category = '30M'
         else:
-            bitrate_category = '50M'
+            bitrate_category = '40M+'
         
         # Get CRF from lookup table
         crf = self.quality_lookup.get_video_crf(codec, bitdepth, hdr, resolution, bitrate_category)
