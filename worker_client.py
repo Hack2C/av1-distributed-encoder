@@ -3,7 +3,7 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
-__version__ = "2.2.1"
+__version__ = "2.2.2"
 
 import os
 import sys
@@ -823,6 +823,9 @@ class WorkerClient:
         cmd.extend([
             '-c:s', 'copy',
             '-map_metadata', '0',
+            # Enable progress reporting
+            '-progress', 'pipe:2',
+            '-stats',
             '-y', str(output_file)
         ])
         
