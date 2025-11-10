@@ -3,11 +3,11 @@ version: '3.8'
 services:
   master:
     image: ghcr.io/hack2c/av1-distributed-encoder:latest
-    container_name: av1-master
+    container_name: av1-master-test
     restart: unless-stopped
     command: python3 master_server.py
     ports:
-      - "8090:8090"
+      - "8091:8090"
     volumes:
       # Media directories from NAS
       - /mnt/media/av1test/TV:/media/TV
@@ -30,6 +30,8 @@ services:
       - FILE_ORDER=largest
       # Audio transcoding (set to 'true' to copy audio without transcoding)
       # - SKIP_AUDIO_TRANSCODE=true
+      # Skip files already encoded with AV1 (set to 'true' to skip AV1 files)
+      - SKIP_AV1_FILES=true
       - PUID=1000
       - PGID=1000
     networks:
@@ -37,7 +39,7 @@ services:
 
   worker:
     image: ghcr.io/hack2c/av1-distributed-encoder:latest
-    container_name: av1-worker-local
+    container_name: av1-worker-test
     restart: unless-stopped
     command: python3 worker_client.py http://master:8090
     environment:

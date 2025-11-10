@@ -85,6 +85,15 @@ class MediaScanner:
                     except Exception as e:
                         logger.warning(f"Failed to probe {file_path}: {e}")
                     
+                    # Check if file is already AV1 and should be skipped
+                    should_skip_av1 = (self.config.skip_av1_files() and 
+                                     metadata and 
+                                     metadata.get('video', {}).get('codec') == 'av1')
+                    
+                    if should_skip_av1:
+                        logger.debug(f"Skipping AV1 file (SKIP_AV1_FILES=true): {file_path.name}")
+                        continue
+                    
                     # Add to database
                     file_info = {
                         'path': str(file_path),

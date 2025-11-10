@@ -83,6 +83,12 @@ class Config:
             if 'transcoding' not in self.config:
                 self.config['transcoding'] = {}
             self.config['transcoding']['skip_audio_transcode'] = os.getenv('SKIP_AUDIO_TRANSCODE').lower() in ('true', '1', 'yes')
+        
+        # Skip AV1 files setting
+        if os.getenv('SKIP_AV1_FILES'):
+            if 'transcoding' not in self.config:
+                self.config['transcoding'] = {}
+            self.config['transcoding']['skip_av1_files'] = os.getenv('SKIP_AV1_FILES').lower() in ('true', '1', 'yes')
     
     def get(self, key, default=None):
         """
@@ -136,6 +142,10 @@ class Config:
     def skip_audio_transcode(self):
         """Check if audio transcoding should be skipped (copy audio streams instead)"""
         return self.get('transcoding.skip_audio_transcode', False)
+    
+    def skip_av1_files(self):
+        """Check if AV1-encoded files should be skipped (not added to processing queue)"""
+        return self.get('transcoding.skip_av1_files', False)
     
     def reload(self):
         """Reload configuration from file"""
