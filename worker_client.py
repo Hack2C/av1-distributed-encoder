@@ -3,7 +3,7 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
-__version__ = "2.2.4"
+__version__ = "2.2.5"
 
 import os
 import sys
@@ -705,9 +705,15 @@ class WorkerClient:
         # Video settings
         codec = metadata['video'].get('codec', 'h264')
         bitdepth = metadata['video'].get('bitdepth', 8)
-        hdr = metadata['video'].get('hdr', 'SDR')
+        hdr_raw = metadata['video'].get('hdr', 'SDR')
         resolution = metadata['video']['resolution']
         bitrate = metadata['video'].get('bitrate', 0)
+        
+        # Map specific HDR types to generic categories for quality lookup
+        if hdr_raw in ['HDR10', 'HDR10+', 'HLG']:
+            hdr = 'HDR'
+        else:
+            hdr = hdr_raw  # 'SDR' or other
         
         # Determine bitrate category
         bitrate_mbps = bitrate / 1_000_000 if bitrate else 5
@@ -731,6 +737,9 @@ class WorkerClient:
             bitrate_category = '30M'
         else:
             bitrate_category = '40M+'
+        
+        # Debug logging for quality lookup
+        logger.info(f"Quality lookup: codec={codec}, bitdepth={bitdepth}bit, hdr={hdr}, resolution={resolution}, bitrate={bitrate_mbps:.1f}M->category={bitrate_category}")
         
         # Get CRF from lookup table
         crf = self.quality_lookup.get_video_crf(codec, bitdepth, hdr, resolution, bitrate_category)
