@@ -3,7 +3,7 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
-__version__ = "2.2.9"
+__version__ = "2.2.10"
 
 import os
 import sys
@@ -960,38 +960,61 @@ class WorkerClient:
                 process.terminate()
                 break
             
-            if 'time=' in line:
+            # Try to parse progress from either time= or frame= 
+            if 'time=' in line or 'frame=' in line:
                 try:
-                    # Parse time
-                    time_str = line.split('time=')[1].split()[0]
-                    h, m, s = time_str.split(':')
-                    current_time = int(h) * 3600 + int(m) * 60 + float(s)
-                    # Processing phase uses full 0-100% range
-                    percent = min(100, (current_time / duration * 100))
-                    
-                    # Parse actual fps from FFmpeg output
+                    percent = 0
                     current_fps = 0.0
                     speed_multiplier = 1.0
+                    eta_seconds = 0
                     
+                    # Parse FPS from FFmpeg output
                     if 'fps=' in line:
                         fps_str = line.split('fps=')[1].split()[0].strip()
                         current_fps = float(fps_str)
                     
-                    if 'speed=' in line:
+                    # Parse speed multiplier
+                    if 'speed=' in line and 'N/A' not in line.split('speed=')[1].split()[0]:
                         speed_str = line.split('speed=')[1].split('x')[0].strip()
                         speed_multiplier = float(speed_str)
                     
-                    # Calculate ETA
-                    remaining_time = duration - current_time
-                    eta_seconds = int(remaining_time / speed_multiplier) if speed_multiplier > 0 else 0
+                    # Try time-based progress first
+                    if 'time=' in line and 'N/A' not in line.split('time=')[1].split()[0]:
+                        time_str = line.split('time=')[1].split()[0]
+                        if ':' in time_str:  # Format: HH:MM:SS.ss
+                            h, m, s = time_str.split(':')
+                            current_time = int(h) * 3600 + int(m) * 60 + float(s)
+                            percent = min(100, (current_time / duration * 100))
+                            
+                            # Calculate ETA based on time
+                            remaining_time = duration - current_time
+                            eta_seconds = int(remaining_time / speed_multiplier) if speed_multiplier > 0 else 0
+                    
+                    # Fallback to frame-based progress if time is N/A
+                    elif 'frame=' in line:
+                        frame_str = line.split('frame=')[1].split()[0].strip()
+                        current_frame = int(frame_str)
+                        
+                        # Estimate progress based on frames (assuming 24fps average)
+                        video_fps = metadata.get('video', {}).get('fps', 24)
+                        total_frames = int(duration * video_fps)
+                        if total_frames > 0:
+                            percent = min(100, (current_frame / total_frames * 100))
+                            
+                            # Calculate ETA based on current fps
+                            if current_fps > 0:
+                                remaining_frames = total_frames - current_frame
+                                eta_seconds = int(remaining_frames / current_fps)
                     
                     # Report every 2 seconds or 1% change
                     current_time_check = time.time()
                     if current_time_check - last_report > 2 or abs(percent - self.current_progress) > 1:
                         self.report_progress(file_id, percent, speed=current_fps, eta=eta_seconds)
                         last_report = current_time_check
+                        logger.info(f"Progress reported: {percent:.1f}% at {current_fps:.1f} fps, ETA: {eta_seconds}s")
+                        
                 except Exception as e:
-                    pass
+                    logger.debug(f"Error parsing progress line: {e} - Line: {line.strip()}")
         
         returncode = process.wait()
         
