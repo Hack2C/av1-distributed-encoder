@@ -3,6 +3,8 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
+__version__ = "2.1.0"
+
 import os
 import sys
 import time
@@ -204,7 +206,7 @@ class WorkerClient:
                 json={
                     'hostname': self.hostname,
                     'capabilities': capabilities,
-                    'version': '1.0.0'
+                    'version': __version__
                 },
                 timeout=10
             )
@@ -446,6 +448,9 @@ class WorkerClient:
             if not metadata or not metadata.get('video'):
                 raise Exception("Failed to probe file or no video stream found")
             
+            # Debug HDR metadata for troubleshooting
+            hdr_debug = self._debug_hdr_metadata(metadata)
+            
             # Check for dynamic HDR that cannot be preserved
             video = metadata['video']
             hdr_type = video.get('hdr', 'SDR')
@@ -478,9 +483,19 @@ class WorkerClient:
             settings = self._determine_settings(metadata)
             logger.info(f"Encoding settings: CRF={settings['crf']}, Opus={settings['opus_bitrate']}k")
             
+            # Get transcoding settings from job (with fallback to environment variables)
+            transcoding_settings = job.get('transcoding_settings', {})
+            skip_audio_transcode = transcoding_settings.get('skip_audio_transcode', 
+                                                          os.getenv('SKIP_AUDIO_TRANSCODE', 'false').lower() == 'true')
+            
+            if skip_audio_transcode:
+                logger.info("Audio transcoding disabled - will copy all audio streams")
+            else:
+                logger.info("Audio transcoding enabled - will transcode to Opus")
+            
             # Transcode with progress callback
             self.report_progress(file_id, 8, status="Starting transcoding...")
-            temp_output = self._transcode(temp_input, metadata, settings, file_id)
+            temp_output = self._transcode(temp_input, metadata, settings, file_id, transcoding_settings)
             upload_failed = False  # Track upload status for cleanup
             
             if not temp_output or not temp_output.exists():
@@ -658,41 +673,136 @@ class WorkerClient:
             'opus_bitrate': opus_bitrate
         }
     
-    def _transcode(self, input_file, metadata, settings, file_id):
-        """Transcode file with progress reporting"""
+    def _transcode(self, input_file, metadata, settings, file_id, transcoding_settings=None):
+        """Transcode video with enhanced HDR support and error handling"""
+        if transcoding_settings is None:
+            transcoding_settings = {}
         output_file = input_file.parent / f"{input_file.stem}_av1{input_file.suffix}"
         
-        # Build ffmpeg command  
+        # Build ffmpeg command with selective stream mapping
         preset = str(self.config.get('transcoding.svt_av1_preset', 0))  # Default to 0 (highest quality)
+        
+        # Check if audio transcoding should be skipped
+        skip_audio_transcode = transcoding_settings.get('skip_audio_transcode', 
+                                                       os.getenv('SKIP_AUDIO_TRANSCODE', 'false').lower() == 'true')
+        
+        # Get audio info for channel mapping
+        audio_channels = metadata.get('audio', [{}])[0].get('channels', 2) if metadata.get('audio') else 2
+        audio_streams_count = len(metadata.get('audio', []))
+        
         cmd = [
             'ffmpeg', '-i', str(input_file),
-            '-map', '0',
+            # Map only the first video stream (avoid thumbnails/attachments)
+            '-map', '0:V:0',  # First video stream
+        ]
+        
+        # Audio handling - either copy all or transcode first stream
+        if skip_audio_transcode:
+            # Copy all audio streams without transcoding
+            cmd.extend([
+                '-map', '0:a',  # Map all audio streams
+                '-c:a', 'copy',  # Copy audio without transcoding
+            ])
+            logger.info(f"Copying {audio_streams_count} audio stream(s) without transcoding (SKIP_AUDIO_TRANSCODE=true)")
+        else:
+            # Original transcoding behavior - map and transcode first audio stream
+            cmd.extend([
+                '-map', '0:a:0?',  # First audio stream (optional)
+                '-c:a', 'libopus',
+                '-b:a', f"{settings['opus_bitrate']}k",
+            ])
+            logger.info(f"Transcoding first audio stream to Opus {settings['opus_bitrate']}k")
+        
+        # Add subtitles and video encoding
+        cmd.extend([
+            '-map', '0:s?',    # All subtitle streams (optional)
+            # Video encoding
             '-c:v', 'libsvtav1',
             '-preset', preset,
             '-crf', str(settings['crf']),
-            '-c:a', 'libopus',
-            '-b:a', f"{settings['opus_bitrate']}k",
+        ])
+        
+        # Handle problematic audio channel layouts (only when transcoding audio)
+        if not skip_audio_transcode and audio_channels > 2:
+            # Force stereo downmix for complex layouts to avoid libopus issues
+            logger.info(f"Audio has {audio_channels} channels, downmixing to stereo to avoid libopus layout issues")
+            cmd.extend(['-ac', '2', '-af', 'pan=stereo|FL=0.5*FL+0.707*FC+0.5*BL+0.5*SL|FR=0.5*FR+0.707*FC+0.5*BR+0.5*SR'])
+        elif not skip_audio_transcode:
+            logger.info(f"Audio has {audio_channels} channels, using direct Opus encoding")
+        
+        # Frame rate validation for SVT-AV1
+        video_info = metadata.get('video', {})
+        fps = video_info.get('fps', 0)
+        if fps > 240:
+            logger.warning(f"Frame rate {fps} fps exceeds SVT-AV1 limit, capping at 60fps")
+            cmd.extend(['-r', '60'])
+        elif fps > 120:
+            logger.warning(f"High frame rate {fps} fps detected, limiting to 120fps for stability")  
+            cmd.extend(['-r', '120'])
+        
+        # Add subtitle and metadata handling
+        cmd.extend([
             '-c:s', 'copy',
             '-map_metadata', '0',
             '-y', str(output_file)
-        ]
+        ])
         
-        # Add HDR color parameters if needed
+        # Add HDR color parameters if needed with validation
         video_info = metadata.get('video', {})
         hdr_type = video_info.get('hdr', 'SDR')
         color_transfer = video_info.get('color_transfer', '')
         color_space = video_info.get('color_space', '')
         
-        if hdr_type in ['HDR10', 'HDR10+'] and color_transfer and color_space:
-            # Insert color parameters before output file for HDR content
-            color_params = [
-                '-color_primaries', 'bt2020',
-                '-color_trc', color_transfer,
-                '-colorspace', color_space
-            ]
-            # Insert before the output filename
-            cmd = cmd[:-2] + color_params + cmd[-2:]
-            logger.info(f"Added HDR color parameters for {hdr_type}: color_trc={color_transfer}, colorspace={color_space}")
+        # Validate and normalize HDR parameters
+        hdr_params_added = False
+        if hdr_type in ['HDR10', 'HDR10+']:
+            logger.info(f"Processing {hdr_type} content: transfer={color_transfer}, space={color_space}")
+            
+            # Validate color parameters
+            valid_transfers = ['smpte2084', 'arib-std-b67', 'smpte428', 'bt2020-10', 'bt2020-12']
+            valid_spaces = ['bt2020nc', 'bt2020c', 'bt2020_ncl', 'bt2020_cl']
+            
+            # Normalize and validate color_transfer
+            normalized_transfer = color_transfer.lower().replace('-', '').replace('_', '')
+            if any(normalized_transfer in vt.replace('-', '').replace('_', '') for vt in valid_transfers):
+                # Use smpte2084 for PQ (most common HDR10)
+                if 'smpte2084' in normalized_transfer or 'pq' in normalized_transfer:
+                    color_transfer = 'smpte2084'
+                # Use arib-std-b67 for HLG
+                elif 'arib' in normalized_transfer or 'hlg' in normalized_transfer:
+                    color_transfer = 'arib-std-b67'
+                else:
+                    color_transfer = 'smpte2084'  # Default to PQ
+                    
+                # Normalize and validate color_space  
+                normalized_space = color_space.lower().replace('-', '').replace('_', '')
+                if any(normalized_space in vs.replace('-', '').replace('_', '') for vs in valid_spaces):
+                    if 'nc' in normalized_space:
+                        color_space = 'bt2020nc'
+                    else:
+                        color_space = 'bt2020nc'  # Default to non-constant
+                else:
+                    color_space = 'bt2020nc'  # Default
+                
+                # Add validated HDR parameters
+                color_params = [
+                    '-color_primaries', 'bt2020',
+                    '-color_trc', color_transfer,
+                    '-colorspace', color_space
+                ]
+                # Insert before the output filename
+                cmd = cmd[:-2] + color_params + cmd[-2:]
+                hdr_params_added = True
+                logger.info(f"Added validated HDR parameters for {hdr_type}: primaries=bt2020, trc={color_transfer}, space={color_space}")
+            else:
+                logger.warning(f"Invalid HDR parameters detected for {hdr_type}, encoding as SDR: transfer={color_transfer}, space={color_space}")
+        
+        # Log HDR processing decision
+        if hdr_type not in ['SDR']:
+            if hdr_params_added:
+                logger.info(f"HDR encoding enabled for {hdr_type}")
+            else:
+                logger.warning(f"HDR content detected ({hdr_type}) but encoding as SDR due to parameter issues")
         
         # Log encoding details for debugging
         logger.info(f"Encoding {input_file.name}: HDR={hdr_type}, bitdepth={video_info.get('bitdepth', 8)}, preset={preset}, CRF={settings['crf']}")
@@ -748,35 +858,142 @@ class WorkerClient:
         
         if returncode != 0:
             stderr_output = ''.join(stderr_lines)
+            logger.error(f"FFmpeg failed with return code {returncode}")
             logger.error(f"FFmpeg stderr output: {stderr_output}")
             
-            # If it's error 234 and we used HDR parameters, try again without them
-            if returncode == 234 and hdr_type in ['HDR10', 'HDR10+'] and any('-color_trc' in str(c) for c in cmd):
-                logger.warning(f"FFmpeg error 234 with {hdr_type} parameters, retrying without color parameters...")
-                return self._transcode_fallback(input_file, metadata, settings, file_id)
+            # Check for specific error patterns
+            hdr_error_patterns = [
+                'color_trc', 'color_primaries', 'colorspace', 'color_range',
+                'Invalid color', 'Unsupported color', 'color transfer',
+                'bt2020', 'smpte2084', 'arib-std-b67'
+            ]
             
-            raise Exception(f"FFmpeg failed with code {returncode}: {stderr_output}")
+            audio_error_patterns = [
+                'Invalid channel layout', 'libopus', 'mapping family',
+                'channel layout', 'audio encoder', 'Invalid argument'
+            ]
+            
+            framerate_error_patterns = [
+                'maximum allowed frame rate', 'frame rate is 240 fps',
+                'fps exceeds', 'framerate'
+            ]
+            
+            is_hdr_error = any(pattern in stderr_output.lower() for pattern in hdr_error_patterns)
+            is_audio_error = any(pattern in stderr_output.lower() for pattern in audio_error_patterns)
+            is_framerate_error = any(pattern in stderr_output.lower() for pattern in framerate_error_patterns)
+            used_hdr_params = hdr_params_added and hdr_type in ['HDR10', 'HDR10+']
+            
+            # Analyze error type and determine retry strategy
+            should_retry = False
+            retry_reason = ""
+            
+            if used_hdr_params and (is_hdr_error or returncode in [1, 234]):
+                should_retry = True
+                retry_reason = f"HDR parameter incompatibility (code: {returncode})"
+            elif is_audio_error and not skip_audio_transcode:
+                # Audio errors when transcoding - try fallback with same settings
+                logger.error(f"Audio encoding error detected: {stderr_output}")
+                retry_reason = "Audio channel layout incompatibility"
+                should_retry = True
+            elif is_framerate_error:
+                # Frame rate errors should be fixed by our rate limiting
+                logger.error(f"Frame rate error detected: {stderr_output}")
+                retry_reason = "Frame rate exceeds encoder limits"
+                
+            if should_retry:
+                logger.warning(f"FFmpeg error {returncode}: {retry_reason}")
+                logger.warning(f"Error types detected - HDR: {is_hdr_error}, Audio: {is_audio_error}, FPS: {is_framerate_error}")
+                logger.warning(f"Retrying with fallback encoding...")
+                return self._transcode_fallback(input_file, metadata, settings, file_id, transcoding_settings)
+            
+            # Enhanced error message with context
+            error_context = []
+            if hdr_type != 'SDR':
+                error_context.append(f"HDR_TYPE={hdr_type}")
+            if used_hdr_params:
+                error_context.append(f"HDR_PARAMS=enabled")
+            
+            context_str = f" ({', '.join(error_context)})" if error_context else ""
+            raise Exception(f"FFmpeg failed with code {returncode}{context_str}: {stderr_output}")
         
         return output_file
     
-    def _transcode_fallback(self, input_file, metadata, settings, file_id):
+    def _transcode_fallback(self, input_file, metadata, settings, file_id, transcoding_settings=None):
         """Fallback transcoding without HDR parameters"""
+        if transcoding_settings is None:
+            transcoding_settings = {}
+        logger.info("=== HDR FALLBACK TRANSCODING ===")
+        video_info = metadata.get('video', {})
+        hdr_type = video_info.get('hdr', 'SDR')
+        logger.warning(f"Transcoding {hdr_type} content as SDR due to FFmpeg HDR parameter issues")
+        logger.warning(f"Original color info: transfer={video_info.get('color_transfer')}, space={video_info.get('color_space')}")
+        
         output_file = input_file.parent / f"{input_file.stem}_av1{input_file.suffix}"
         
-        # Build basic ffmpeg command without HDR parameters
+        # Build basic ffmpeg command without HDR parameters (same mapping as main method)
         preset = str(self.config.get('transcoding.svt_av1_preset', 0))  # Default to 0 (highest quality)
+        
+        # Check if audio transcoding should be skipped (same as main method)
+        skip_audio_transcode = transcoding_settings.get('skip_audio_transcode', 
+                                                       os.getenv('SKIP_AUDIO_TRANSCODE', 'false').lower() == 'true')
+        
+        # Get audio info for channel mapping  
+        audio_channels = metadata.get('audio', [{}])[0].get('channels', 2) if metadata.get('audio') else 2
+        audio_streams_count = len(metadata.get('audio', []))
+        
         cmd = [
             'ffmpeg', '-i', str(input_file),
-            '-map', '0',
+            # Map only the first video stream (avoid thumbnails/attachments)
+            '-map', '0:V:0',  # First video stream
+        ]
+        
+        # Audio handling - either copy all or transcode first stream (same as main method)
+        if skip_audio_transcode:
+            # Copy all audio streams without transcoding
+            cmd.extend([
+                '-map', '0:a',  # Map all audio streams
+                '-c:a', 'copy',  # Copy audio without transcoding
+            ])
+            logger.info(f"Fallback: Copying {audio_streams_count} audio stream(s) without transcoding")
+        else:
+            # Original transcoding behavior - map and transcode first audio stream
+            cmd.extend([
+                '-map', '0:a:0?',  # First audio stream (optional)
+                '-c:a', 'libopus',
+                '-b:a', f"{settings['opus_bitrate']}k",
+            ])
+            logger.info(f"Fallback: Transcoding first audio stream to Opus {settings['opus_bitrate']}k")
+        
+        # Add subtitles and video encoding
+        cmd.extend([
+            '-map', '0:s?',    # All subtitle streams (optional)
+            # Video encoding
             '-c:v', 'libsvtav1',
             '-preset', preset,
             '-crf', str(settings['crf']),
-            '-c:a', 'libopus',
-            '-b:a', f"{settings['opus_bitrate']}k",
+        ])
+        
+        # Handle problematic audio channel layouts (only when transcoding audio)
+        if not skip_audio_transcode and audio_channels > 2:
+            # Force stereo downmix for complex layouts to avoid libopus issues
+            logger.info(f"Fallback: Audio has {audio_channels} channels, downmixing to stereo")
+            cmd.extend(['-ac', '2', '-af', 'pan=stereo|FL=0.5*FL+0.707*FC+0.5*BL+0.5*SL|FR=0.5*FR+0.707*FC+0.5*BR+0.5*SR'])
+        
+        # Frame rate validation for SVT-AV1 (same as main method)
+        fps = video_info.get('fps', 0)
+        if fps > 240:
+            logger.warning(f"Fallback: Frame rate {fps} fps exceeds SVT-AV1 limit, capping at 60fps")
+            cmd.extend(['-r', '60'])
+        elif fps > 120:
+            logger.warning(f"Fallback: High frame rate {fps} fps detected, limiting to 120fps")  
+            cmd.extend(['-r', '120'])
+        
+        # Add subtitle and metadata handling
+        cmd.extend([
             '-c:s', 'copy',
             '-map_metadata', '0',
             '-y', str(output_file)
-        ]
+        ])
         
         import subprocess
         duration = metadata['format']['duration']
@@ -831,6 +1048,45 @@ class WorkerClient:
             raise Exception(f"Fallback FFmpeg also failed with code {returncode}: {stderr_output}")
         
         return output_file
+    
+    def _debug_hdr_metadata(self, metadata):
+        """Debug HDR metadata for troubleshooting"""
+        video_info = metadata.get('video', {})
+        
+        debug_info = {
+            'hdr_type': video_info.get('hdr', 'SDR'),
+            'hdr_dynamic': video_info.get('hdr_dynamic', False),
+            'color_transfer': video_info.get('color_transfer', ''),
+            'color_space': video_info.get('color_space', ''),
+            'bitdepth': video_info.get('bitdepth', 8),
+            'codec': video_info.get('codec', ''),
+            'resolution': video_info.get('resolution', ''),
+        }
+        
+        # Only show debug info for HDR content or if debug is enabled
+        hdr_debug_enabled = os.getenv('HDR_DEBUG', 'false').lower() == 'true'
+        
+        if debug_info['hdr_type'] != 'SDR' or hdr_debug_enabled:
+            logger.info("=== HDR DEBUG INFO ===")
+            for key, value in debug_info.items():
+                logger.info(f"{key}: {value}")
+        
+        # Check for problematic combinations
+        warnings = []
+        if debug_info['hdr_type'] != 'SDR':
+            if not debug_info['color_transfer']:
+                warnings.append("Missing color_transfer for HDR content")
+            if not debug_info['color_space']:
+                warnings.append("Missing color_space for HDR content")
+            if debug_info['bitdepth'] == 8:
+                warnings.append("HDR content with 8-bit depth (unusual)")
+                
+        if warnings:
+            logger.warning("HDR metadata warnings:")
+            for warning in warnings:
+                logger.warning(f"  - {warning}")
+                
+        return debug_info
     
     def _replace_original(self, original_path, transcoded_path):
         """Replace original file with transcoded version"""

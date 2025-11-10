@@ -132,6 +132,8 @@ docker compose -f docker-compose.worker-1.yml up -d
 
 - `FILE_ORDER`: Processing order (`oldest`, `newest`, `largest`, `smallest`)
 
+- `SKIP_AUDIO_TRANSCODE`: Set to `true` to copy audio without transcoding (useful for complex multi-channel audio)
+
 - `PUID/PGID`: User/Group ID for file ownership (default: 1000)
 
 **Distributed Mode:**
@@ -668,5 +670,22 @@ MIT License - See LICENSE file for details
 
 ---
 
-**Version:** 2.0.0  
-**Last Updated:** October 2025
+## 📋 Changelog
+
+### Version 2.1.0 (November 2025)
+- **🎛️ Centralized Audio Configuration**: `SKIP_AUDIO_TRANSCODE` now configured on master and distributed to all workers
+- **🎵 Enhanced Audio Handling**: Improved support for complex multi-channel audio layouts with optional transcoding bypass
+- **🌈 Production HDR Support**: Comprehensive HDR10/HDR10+ parameter validation and intelligent fallback mechanisms
+- **📊 Better Progress Reporting**: Detailed status messages for download, analysis, transcoding, and upload phases
+- **🚀 Performance Optimizations**: Database compound indexes for large libraries (5000+ files) and configurable processing order
+- **🔧 Production Improvements**: Enhanced error handling, frame rate validation, and selective FFmpeg stream mapping
+
+### Version 2.0.0 (October 2025)
+- Initial distributed transcoding system with file distribution mode
+- HDR content support and quality-based encoding
+- Web-based monitoring and progress tracking
+
+---
+
+**Version:** 2.1.0  
+**Last Updated:** November 2025

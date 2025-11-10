@@ -28,6 +28,8 @@ services:
       # - largest: Process biggest files first (maximize space savings)
       # - smallest: Process smallest files first (quick wins)
       - FILE_ORDER=largest
+      # Audio transcoding (set to 'true' to copy audio without transcoding)
+      # - SKIP_AUDIO_TRANSCODE=true
       - PUID=1000
       - PGID=1000
     networks:
@@ -46,6 +48,8 @@ services:
       - SVT_AV1_PRESET=0
       - PUID=1000
       - PGID=1000
+      # HDR debugging (set to 'true' to enable verbose HDR logging)
+      # - HDR_DEBUG=true
     cap_add:
       - SYS_ADMIN
     devices:

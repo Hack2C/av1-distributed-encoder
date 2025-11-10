@@ -203,13 +203,24 @@ class MasterCoordinator:
             display_name = self.workers[worker_id].get('display_name', worker_id[:8])
             logger.info(f"Assigned job {file_id} ({file_record['filename']}) to {display_name}")
             
+            # Include transcoding settings from master config
+            transcoding_settings = {
+                'skip_audio_transcode': self.config.skip_audio_transcode()
+            }
+            
+            # Add SVT-AV1 preset if configured
+            svt_preset = self.config.get('transcoding.svt_av1_preset')
+            if svt_preset is not None:
+                transcoding_settings['svt_av1_preset'] = svt_preset
+            
             return {
                 'file_id': file_id,
                 'path': file_record['path'],
                 'filename': file_record['filename'],
                 'size_bytes': file_record['size_bytes'],
                 'source_codec': file_record.get('source_codec'),
-                'source_resolution': file_record.get('source_resolution')
+                'source_resolution': file_record.get('source_resolution'),
+                'transcoding_settings': transcoding_settings
             }
     
     def update_job_progress(self, worker_id, file_id, progress_data):

@@ -77,6 +77,12 @@ class Config:
             if 'processing' not in self.config:
                 self.config['processing'] = {}
             self.config['processing']['file_order'] = os.getenv('FILE_ORDER').lower()
+        
+        # Audio transcoding setting
+        if os.getenv('SKIP_AUDIO_TRANSCODE'):
+            if 'transcoding' not in self.config:
+                self.config['transcoding'] = {}
+            self.config['transcoding']['skip_audio_transcode'] = os.getenv('SKIP_AUDIO_TRANSCODE').lower() in ('true', '1', 'yes')
     
     def get(self, key, default=None):
         """
@@ -126,6 +132,10 @@ class Config:
             logger.warning(f"Invalid file order '{order}', defaulting to 'oldest'")
             return 'oldest'
         return order
+    
+    def skip_audio_transcode(self):
+        """Check if audio transcoding should be skipped (copy audio streams instead)"""
+        return self.get('transcoding.skip_audio_transcode', False)
     
     def reload(self):
         """Reload configuration from file"""

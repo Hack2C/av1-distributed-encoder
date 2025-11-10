@@ -39,6 +39,11 @@ services:
       # - smallest: Process smallest files first (quick wins)
       # - FILE_ORDER=largest
       
+      # Optional: Audio Transcoding
+      # Set to true to copy all audio streams without transcoding
+      # Useful for files with complex multi-channel audio layouts
+      # - SKIP_AUDIO_TRANSCODE=true
+      
       # Optional: Process Priority
       - NICE_LEVEL=19
       - IONICE_CLASS=3
