@@ -3,7 +3,7 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
-__version__ = "2.2.5"
+__version__ = "2.2.6"
 
 import os
 import sys
@@ -843,8 +843,8 @@ class WorkerClient:
             '-c:s', 'copy',
             '-map_metadata', '0',
             # Enable progress reporting
-            '-progress', 'pipe:2',
             '-stats',
+            '-stats_period', '2',
             '-y', str(output_file)
         ])
         
@@ -929,6 +929,10 @@ class WorkerClient:
         
         for line in process.stderr:
             stderr_lines.append(line)
+            # Debug: Log FFmpeg output lines that might contain progress
+            if any(keyword in line for keyword in ['time=', 'frame=', 'fps=', 'speed=']):
+                logger.debug(f"FFmpeg progress line: {line.strip()}")
+            
             if 'time=' in line:
                 try:
                     # Parse time
