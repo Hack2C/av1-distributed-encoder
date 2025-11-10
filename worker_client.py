@@ -3,7 +3,7 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
-__version__ = "2.2.8"
+__version__ = "2.2.9"
 
 import os
 import sys
@@ -403,10 +403,12 @@ class WorkerClient:
             logger.info(f"Downloading file {file_id} from master...")
             self.report_progress(file_id, 0, status="Starting download...", speed="-- MB/s", eta="--:--")
             
+            # Optimized download with connection settings
             response = requests.get(
                 f"{self.master_url}/api/worker/{self.worker_id}/file/{file_id}/download",
                 stream=True,
-                timeout=300  # 5 minutes for large files
+                timeout=300,  # 5 minutes for large files
+                headers={'Connection': 'keep-alive'}
             )
             
             if response.status_code != 200:
@@ -419,14 +421,15 @@ class WorkerClient:
             # Save streamed file with progress tracking
             last_report_time = time.time()
             with open(temp_input, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
+                # Use larger chunk size for better performance (1MB chunks)
+                for chunk in response.iter_content(chunk_size=1024*1024):
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
                         
                         # Report download progress with proper percentages
                         current_time = time.time()
-                        if total_size > 0 and (current_time - last_report_time > 0.5):  # Update every 500ms
+                        if total_size > 0 and (current_time - last_report_time > 1.0):  # Update every 1 second
                             download_percent_actual = (downloaded / total_size) * 100
                             
                             # Calculate download speed and ETA
