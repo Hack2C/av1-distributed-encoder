@@ -3,7 +3,7 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
-__version__ = "2.2.6"
+__version__ = "2.2.8"
 
 import os
 import sys
@@ -844,9 +844,11 @@ class WorkerClient:
             '-map_metadata', '0',
             # Enable progress reporting
             '-stats',
-            '-stats_period', '2',
-            '-y', str(output_file)
+            '-stats_period', '2'
         ])
+        
+        # HDR parameters will be inserted here if needed
+        # Output file will be added at the very end
         
         # Add HDR color parameters if needed with validation
         video_info = metadata.get('video', {})
@@ -886,13 +888,11 @@ class WorkerClient:
                     color_space = 'bt2020nc'  # Default
                 
                 # Add validated HDR parameters
-                color_params = [
+                cmd.extend([
                     '-color_primaries', 'bt2020',
                     '-color_trc', color_transfer,
                     '-colorspace', color_space
-                ]
-                # Insert before the output filename
-                cmd = cmd[:-2] + color_params + cmd[-2:]
+                ])
                 hdr_params_added = True
                 logger.info(f"Added validated HDR parameters for {hdr_type}: primaries=bt2020, trc={color_transfer}, space={color_space}")
             else:
@@ -907,6 +907,9 @@ class WorkerClient:
         
         # Log encoding details for debugging
         logger.info(f"Encoding {input_file.name}: HDR={hdr_type}, bitdepth={video_info.get('bitdepth', 8)}, preset={preset}, CRF={settings['crf']}")
+        
+        # Add output file at the very end
+        cmd.extend(['-y', str(output_file)])
         
         import subprocess
         duration = metadata['format']['duration']
@@ -927,11 +930,32 @@ class WorkerClient:
         current_fps = 0.0
         stderr_lines = []
         
+        # Add timeout and activity tracking
+        import time
+        start_time = time.time()
+        last_activity = start_time
+        
+        # Count lines to see if FFmpeg is producing any output at all
+        line_count = 0
+        
         for line in process.stderr:
+            line_count += 1
             stderr_lines.append(line)
-            # Debug: Log FFmpeg output lines that might contain progress
-            if any(keyword in line for keyword in ['time=', 'frame=', 'fps=', 'speed=']):
-                logger.debug(f"FFmpeg progress line: {line.strip()}")
+            last_activity = time.time()
+            
+            # Log first 10 lines and every 100 lines to see FFmpeg activity
+            if line_count <= 10 or line_count % 100 == 0:
+                logger.info(f"FFmpeg line #{line_count}: {line.strip()}")
+            
+            # Debug: Log any line that might be progress-related
+            if any(keyword in line.lower() for keyword in ['time=', 'frame=', 'fps=', 'speed=', 'progress']):
+                logger.info(f"FFmpeg PROGRESS #{line_count}: {line.strip()}")
+            
+            # Check for FFmpeg hanging (no output for 60 seconds)
+            if time.time() - last_activity > 60:
+                logger.error(f"FFmpeg appears to be hanging - no output for 60 seconds (total lines: {line_count})")
+                process.terminate()
+                break
             
             if 'time=' in line:
                 try:
