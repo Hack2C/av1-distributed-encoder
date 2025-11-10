@@ -1,52 +1,49 @@
-# AV1 Distributed Transcoding System# 🎬 AV1 Distributed Transcoding System
+# 🎬 AV1 Distributed Transcoding System
+
+High-performance distributed media transcoding system that converts your entire library to AV1 (SVT-AV1) with Opus audio. Features modern web interface, smart quality optimization, and distributed processing across multiple machines.
 
 
 
-A distributed video transcoding system that converts video files to AV1 format using SVT-AV1 encoder across multiple worker machines.High-performance distributed media transcoding system that converts your entire library to AV1 (SVT-AV1) with Opus audio. Features modern web interface, smart quality optimization, and distributed processing across multiple machines.
+## ✨ Features
+
+### Core Capabilities
+- ✅ **AV1 Encoding** - SVT-AV1 with configurable presets (0-13)
+- ✅ **Opus Audio** - High-quality audio with excellent compression
+- ✅ **Smart Quality** - Automatic CRF/bitrate based on source resolution and codec
+- ✅ **Modern Web UI** - Real-time monitoring with detailed progress tracking
+- ✅ **Safe Processing** - Testing mode, backups, atomic file operations
+- ✅ **Efficient** - Only replaces files with 5%+ space savings
+- ✅ **HDR Support** - Automatic HDR10 detection and preservation
 
 
 
-## Features## ✨ Features
-
-
-
-- **Distributed Processing**: Master/worker architecture for parallel transcoding### Core Capabilities
-
-- **File Distribution Mode**: Workers download files via HTTP (no shared storage needed)- ✅ **AV1 Encoding** - SVT-AV1 with configurable presets (0-13)
-
-- **HDR Support**: Automatically detects and preserves HDR10 metadata, skips dynamic HDR (HDR10+, Dolby Vision)- ✅ **Opus Audio** - High-quality audio with excellent compression
-
-- **Quality-Based Encoding**: Automatic CRF selection based on resolution- ✅ **Smart Quality** - Automatic CRF/bitrate based on source resolution and codec
-
-- **Web Interface**: Real-time monitoring with progress tracking- ✅ **Modern Web UI** - Real-time monitoring with detailed progress tracking
-
-- **Docker-Based**: Easy deployment with Docker Compose- ✅ **Safe Processing** - Testing mode, backups, atomic file operations
-
-- **GitHub Actions CI/CD**: Automated builds to GitHub Container Registry- ✅ **Efficient** - Only replaces files with 5%+ space savings
-
-
-
-## Quick Start### Distributed Processing
-
+### Distributed Processing
 - ✅ **Master/Worker Architecture** - Coordinate jobs across multiple computers
-
-### 1. Master Server + Local Worker (Linux)- ✅ **Auto Job Distribution** - Workers request jobs when idle
-
+- ✅ **Auto Job Distribution** - Workers request jobs when idle
 - ✅ **Real-time Monitoring** - Single unified web interface
-
-```bash- ✅ **Health Monitoring** - Auto-detect and recover from worker failures
-
-# Clone the repository- ✅ **Linear Scaling** - Add workers for proportional speedup
-
-git clone https://github.com/Hack2C/av1-distributed-encoder.git- ✅ **File Distribution Mode** - HTTP-based transfers (no shared storage needed)
-
-cd av1-distributed-encoder
+- ✅ **Health Monitoring** - Auto-detect and recover from worker failures
+- ✅ **Linear Scaling** - Add workers for proportional speedup
+- ✅ **File Distribution Mode** - HTTP-based transfers (no shared storage needed)
 
 ### Advanced Features
+- ✅ **Job Controls** - Cancel, retry, skip, delete operations
+- ✅ **Detailed Tracking** - Resolution, codec, bitrate, worker assignment
+- ✅ **Time Estimates** - Per-file and overall ETA with processing speed
+- ✅ **Process Priority** - Configurable nice/ionice for background operation
+- ✅ **HDR Support** - Automatic detection and preservation
+- ✅ **Configurable Processing Order** - Process files by oldest/newest/largest/smallest
 
-# Start master + 1 local worker- ✅ **Job Controls** - Cancel, retry, skip, delete operations
+## 🚀 Quick Start
 
-docker compose -f docker-compose.test.yml up -d- ✅ **Detailed Tracking** - Resolution, codec, bitrate, worker assignment
+### Master Server + Local Worker (Linux)
+
+```bash
+# Clone the repository
+git clone https://github.com/Hack2C/av1-distributed-encoder.git
+cd av1-distributed-encoder
+
+# Start master + 1 local worker
+docker compose -f docker-compose.test.yml up -d
 
 - ✅ **Time Estimates** - Per-file and overall ETA with processing speed
 
@@ -92,47 +89,38 @@ open http://localhost:8090
 
 
 
-- **Master Server**: Coordinates jobs, serves web UI, provides file downloads**Worker Node:**
+# Access web interface
+http://localhost:8090
+```
 
-- **Workers**: Process transcoding jobs, download files from master, upload results```bash
+### Additional Workers
 
-- **File Distribution**: HTTP-based file transfer (no NFS/SMB required)# Copy worker config
-
+```bash
+# Copy worker config
 cp docker-compose.worker.yml docker-compose.worker-1.yml
 
-## Configuration
-
 # Edit configuration (set MASTER_URL and media paths)
+nano docker-compose.worker-1.yml
 
-### Quality Lookup (`quality_lookup.json`)nano docker-compose.worker-1.yml
+# Start worker
+docker compose -f docker-compose.worker-1.yml up -d
+```
 
+## 📦 Installation
 
+### Prerequisites
+- Docker Desktop (Windows/Mac) or Docker Engine (Linux)
+- Access to media files (local or network share)
 
-Defines CRF values based on resolution:# Start worker
+### Architecture
+- **Master Server**: Coordinates jobs, serves web UI, provides file downloads
+- **Workers**: Process transcoding jobs, download files from master, upload results
+- **File Distribution**: HTTP-based file transfer (no NFS/SMB required)
+- **Quality Lookup**: Built-in CRF/bitrate tables (no manual config needed)
 
-- 4K (2160p): CRF 24docker compose -f docker-compose.worker-1.yml up -d
+## ⚙️ Configuration
 
-- 1440p: CRF 25```
-
-- 1080p: CRF 26
-
-- 720p: CRF 27### Native Python
-
-- 480p: CRF 28
-
-**Standalone Mode:**
-
-### Audio Codec (`audio_codec_lookup.json`)```bash
-
-# Install dependencies
-
-Defines Opus bitrates for different source audio formats.pip3 install -r requirements.txt
-
-
-
-### Environment Variables# Edit config.json
-
-nano config.json
+**Quality settings are built into the container** - no manual configuration required!
 
 #### Master
 
@@ -160,35 +148,47 @@ nano config.json
 
 ./start_worker.sh http://MASTER_IP:8090
 
-## HDR Handling```
+## 🎨 HDR Handling
 
+The system automatically detects and handles HDR content:
 
+- ✅ **HDR10 (Static)**: Transcoded with proper color parameters preserved
+- ✅ **HDR10+ (Static)**: Static metadata preserved, dynamic metadata handled gracefully  
+- ❌ **HDR10+ (Dynamic)**: Skipped - dynamic metadata cannot be preserved
+- ❌ **Dolby Vision**: Always skipped - dynamic metadata cannot be preserved
 
-The system automatically:## 📦 Installation
+**Quality Protection**: Files with dynamic HDR are skipped to prevent quality degradation.
 
-- **Preserves HDR10** (static metadata): Transcoded with proper color transfer and primaries
+## 📦 Installation
 
-- **Skips HDR10+**: Dynamic metadata cannot be preserved, file is skipped### Prerequisites
-
-- **Skips Dolby Vision**: Dynamic metadata cannot be preserved, file is skipped
-
-**Docker Method:**
-
-## Docker Compose Files- Docker Desktop (Windows/Mac) or Docker Engine (Linux)
-
+### Prerequisites
+- Docker Desktop (Windows/Mac) or Docker Engine (Linux)
 - Access to media files (local or network share)
 
+### Docker Compose Files
+
 - `docker-compose.test.yml`: Master + 1 local worker for testing
+- `docker-compose.master.yml`: Master server only
+- `docker-compose.worker.yml`: Worker node template
+- `docker-compose.windows-worker.yml`: Windows worker using GHCR image
 
-- `docker-compose.master.yml`: Master server only**Native Method:**
+**Quality settings are built into the container** - no manual configuration required!
 
-- `docker-compose.worker.yml`: Local worker only  - Python 3.12+
+### Recommended Setup: File Distribution Mode
+- ✅ **No shared storage needed** - Workers download files via HTTP
+- ✅ **Simplified deployment** - No NFS/SMB mount configuration
+- ✅ **Better security** - No privileged containers required
+- ✅ **Cross-platform** - Works on Windows, Linux, macOS workers
 
-- `docker-compose.windows-worker.yml`: Windows worker using GHCR image- FFmpeg with libsvtav1 and libopus support
+## 📊 Monitoring
 
+Web interface (http://localhost:8090) provides:
+- Overall statistics (files processed, space saved)
+- Worker status and performance monitoring
+- File queue with detailed progress tracking
+- Real-time updates via WebSockets
 
-
-## Monitoring### Configuration
+## ⚙️ Configuration
 
 
 
