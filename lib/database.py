@@ -121,9 +121,12 @@ class Database:
             if cursor.fetchone()[0] == 0:
                 cursor.execute('INSERT INTO statistics DEFAULT VALUES')
             
-            # Create indexes
+            # Create indexes for performance with large libraries
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_status ON files(status)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_directory ON files(directory)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_status_priority_created ON files(status, priority DESC, created_at)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_status_size ON files(status, size_bytes DESC)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_path ON files(path)')
             
             # Migrate existing database - add new columns if they don't exist
             self._migrate_database(cursor)

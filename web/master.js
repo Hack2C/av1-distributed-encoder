@@ -308,12 +308,16 @@ function renderFiles(files) {
             const progress = file.progress_percent || 0;
             const speed = file.processing_speed_fps ? `${file.processing_speed_fps.toFixed(1)} fps` : '--';
             const eta = file.time_remaining_seconds ? formatDuration(file.time_remaining_seconds) : '--:--';
+            const statusMsg = file.status_message || 'Processing...';
             
             progressBar = `
                 <div class="file-progress">
                     <div class="file-progress-info">
                         <span>${progress.toFixed(1)}%</span>
                         <span>${speed} | ETA: ${eta}</span>
+                    </div>
+                    <div class="file-progress-status">
+                        <small>${escapeHtml(statusMsg)}</small>
                     </div>
                     <div class="progress-bar-container">
                         <div class="progress-bar" style="width: ${progress}%"></div>
@@ -416,6 +420,7 @@ function updateFileProgress(data) {
         filesData[fileIndex].progress_percent = data.percent;
         filesData[fileIndex].processing_speed_fps = data.speed;
         filesData[fileIndex].time_remaining_seconds = data.eta;
+        filesData[fileIndex].status_message = data.status; // Add status message
         filterAndRenderFiles();
     }
 }

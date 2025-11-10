@@ -296,7 +296,7 @@ class WorkerClient:
             logger.error(f"Error requesting job: {e}")
             return None
     
-    def report_progress(self, file_id, percent, speed=None, eta=None):
+    def report_progress(self, file_id, percent, speed=None, eta=None, status=None):
         """Report progress to master"""
         try:
             # Update current progress and stats for heartbeat
@@ -306,13 +306,19 @@ class WorkerClient:
             if eta is not None:
                 self.current_eta = eta
                 
+            progress_data = {
+                'percent': percent,
+                'speed': speed,
+                'eta': eta
+            }
+            
+            # Add status message if provided
+            if status is not None:
+                progress_data['status'] = status
+                
             requests.post(
                 f"{self.master_url}/api/worker/{self.worker_id}/job/{file_id}/progress",
-                json={
-                    'percent': percent,
-                    'speed': speed,
-                    'eta': eta
-                },
+                json=progress_data,
                 timeout=5
             )
         except Exception as e:
@@ -395,7 +401,7 @@ class WorkerClient:
             # In file distribution mode, download from master
             if file_distribution_mode:
                 logger.info(f"Downloading file {file_id} from master...")
-                self.report_progress(file_id, 2)
+                self.report_progress(file_id, 0, status="Downloading file...")
                 
                 response = requests.get(
                     f"{self.master_url}/api/worker/{self.worker_id}/file/{file_id}/download",
@@ -406,13 +412,24 @@ class WorkerClient:
                 if response.status_code != 200:
                     raise Exception(f"Failed to download file: HTTP {response.status_code}")
                 
-                # Save streamed file
+                # Get file size from Content-Length header if available
+                total_size = int(response.headers.get('content-length', 0))
+                downloaded = 0
+                
+                # Save streamed file with progress tracking
                 with open(temp_input, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
+                            downloaded += len(chunk)
+                            
+                            # Report download progress (0-3% range)
+                            if total_size > 0:
+                                download_percent = min(3, (downloaded / total_size) * 3)
+                                self.report_progress(file_id, download_percent, status="Downloading file...")
                 
                 logger.info(f"File downloaded successfully: {temp_input}")
+                self.report_progress(file_id, 3, status="Download complete")
             else:
                 # Shared storage mode - copy from network share
                 logger.info(f"Copying to temp: {file_path} -> {temp_input}")
@@ -423,7 +440,7 @@ class WorkerClient:
             
             # Probe file
             logger.info("Probing file metadata...")
-            self.report_progress(file_id, 5)
+            self.report_progress(file_id, 5, status="Analyzing file...")
             metadata = MediaProbe.probe_file(temp_input)
             
             if not metadata or not metadata.get('video'):
@@ -462,7 +479,7 @@ class WorkerClient:
             logger.info(f"Encoding settings: CRF={settings['crf']}, Opus={settings['opus_bitrate']}k")
             
             # Transcode with progress callback
-            self.report_progress(file_id, 0)  # Start at 0%
+            self.report_progress(file_id, 8, status="Starting transcoding...")
             temp_output = self._transcode(temp_input, metadata, settings, file_id)
             upload_failed = False  # Track upload status for cleanup
             
@@ -482,7 +499,7 @@ class WorkerClient:
             # File distribution mode: upload result to master
             if file_distribution_mode:
                 logger.info(f"Uploading result to master...")
-                self.report_progress(file_id, 95)
+                self.report_progress(file_id, 95, status="Uploading result...")
                 
                 upload_success = False
                 with open(temp_output, 'rb') as f:
@@ -505,7 +522,7 @@ class WorkerClient:
                             temp_output.unlink()
                         
                         # Report completion - this will retry until successful
-                        self.report_progress(file_id, 100)
+                        self.report_progress(file_id, 100, status="Completed successfully!")
                         completion_success = self.report_completion(file_id, output_size, original_size)
                         
                         if completion_success:

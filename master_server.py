@@ -342,7 +342,8 @@ def api_worker_job_progress(worker_id, file_id):
             'file_id': file_id,
             'percent': data.get('percent', 0),
             'speed': data.get('speed'),
-            'eta': data.get('eta')
+            'eta': data.get('eta'),
+            'status': data.get('status')
         })
         
         return jsonify({'success': True})
