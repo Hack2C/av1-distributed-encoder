@@ -12,7 +12,6 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - MEDIA_DIRS=
-      - FILE_DISTRIBUTION_MODE=true
       - TEMP_DIR=/tmp/av1_transcoding
       - TESTING_MODE=true
       - SVT_AV1_PRESET=0

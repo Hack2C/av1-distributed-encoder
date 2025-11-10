@@ -167,9 +167,12 @@ function calculateEstimatedTime() {
     let activeWorkers = 0;
     
     Object.values(workersData).forEach(worker => {
-        if (worker.status === 'processing' && worker.current_speed) {
-            totalSpeed += worker.current_speed;
-            activeWorkers++;
+        if ((worker.status === 'processing' || worker.status === 'downloading' || worker.status === 'uploading') && worker.current_speed) {
+            // Only count numeric speeds (FPS) for average calculation, not download speeds
+            if (typeof worker.current_speed === 'number') {
+                totalSpeed += worker.current_speed;
+                activeWorkers++;
+            }
         }
     });
     
@@ -219,14 +222,18 @@ function updateWorkers() {
         const progress = worker.current_progress || 0;
         
         let currentFileInfo = '';
-        if (worker.status === 'processing' && worker.current_file) {
+        if ((worker.status === 'processing' || worker.status === 'downloading' || worker.status === 'uploading') && worker.current_file) {
             const eta = worker.current_eta ? (typeof worker.current_eta === 'string' ? worker.current_eta : formatDuration(worker.current_eta)) : '--:--';
             const speed = worker.current_speed ? 
                 (typeof worker.current_speed === 'string' ? worker.current_speed : `${worker.current_speed.toFixed(1)} fps`) : '--';
             
+            // Show appropriate label based on status
+            const activityLabel = worker.status === 'downloading' ? 'Downloading:' : 
+                                 worker.status === 'uploading' ? 'Uploading:' : 'Processing:';
+            
             currentFileInfo = `
                 <div class="worker-current-file">
-                    <div class="worker-current-file-label">Processing:</div>
+                    <div class="worker-current-file-label">${activityLabel}</div>
                     <div class="worker-current-file-name">${escapeHtml(worker.current_file)}</div>
                     <div class="worker-progress">
                         <div class="progress-bar-container">

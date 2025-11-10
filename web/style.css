@@ -260,6 +260,14 @@ header h1 {
     border-left-color: var(--accent-yellow);
 }
 
+.worker-card.downloading {
+    border-left-color: var(--accent-blue);
+}
+
+.worker-card.uploading {
+    border-left-color: var(--accent-purple);
+}
+
 .worker-card.offline {
     border-left-color: var(--text-muted);
     opacity: 0.6;
@@ -293,6 +301,16 @@ header h1 {
 
 .worker-status.processing {
     background: var(--accent-yellow);
+    color: white;
+}
+
+.worker-status.downloading {
+    background: var(--accent-blue);
+    color: white;
+}
+
+.worker-status.uploading {
+    background: var(--accent-purple);
     color: white;
 }
 

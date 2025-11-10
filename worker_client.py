@@ -3,7 +3,7 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
-__version__ = "2.1.1"
+__version__ = "2.2.0"
 
 import os
 import sys
@@ -46,6 +46,7 @@ class WorkerClient:
         self.current_job = None
         self.current_speed = 0.0  # Current FPS
         self.current_eta = 0  # Current ETA in seconds
+        self.current_phase = 'idle'  # Track current activity: 'idle', 'downloading', 'processing', 'uploading'
         
         # Prime CPU monitoring
         psutil.cpu_percent(interval=None)
@@ -234,7 +235,7 @@ class WorkerClient:
             cpu_percent = psutil.cpu_percent(interval=None)  # Non-blocking, uses previous call
             memory_percent = psutil.virtual_memory().percent
             
-            status = 'processing' if self.current_job else 'idle'
+            status = self.current_phase if self.current_job else 'idle'
             
             heartbeat_data = {
                 'status': status,
@@ -383,12 +384,10 @@ class WorkerClient:
         file_path = Path(job['path'])
         original_size = job['size_bytes']
         
-        # Check if file distribution mode is enabled
-        file_distribution_mode = os.environ.get('FILE_DISTRIBUTION_MODE', 'false').lower() == 'true'
-        
         logger.info(f"Processing job {file_id}: {file_path}")
-        if file_distribution_mode:
-            logger.info("File distribution mode: will download file from master")
+        logger.info("Downloading file from master...")
+        self.current_phase = 'downloading'
+        
         self.current_job = job
         self.job_start_time = datetime.now().isoformat()
         self.current_progress = 0
@@ -400,19 +399,18 @@ class WorkerClient:
             
             temp_input = temp_dir / file_path.name
             
-            # In file distribution mode, download from master
-            if file_distribution_mode:
-                logger.info(f"Downloading file {file_id} from master...")
-                self.report_progress(file_id, 0, status="Starting download...", speed="-- MB/s", eta="--:--")
-                
-                response = requests.get(
-                    f"{self.master_url}/api/worker/{self.worker_id}/file/{file_id}/download",
-                    stream=True,
-                    timeout=300  # 5 minutes for large files
-                )
-                
-                if response.status_code != 200:
-                    raise Exception(f"Failed to download file: HTTP {response.status_code}")
+            # Download file from master
+            logger.info(f"Downloading file {file_id} from master...")
+            self.report_progress(file_id, 0, status="Starting download...", speed="-- MB/s", eta="--:--")
+            
+            response = requests.get(
+                f"{self.master_url}/api/worker/{self.worker_id}/file/{file_id}/download",
+                stream=True,
+                timeout=300  # 5 minutes for large files
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"Failed to download file: HTTP {response.status_code}")
                 
                 # Get file size from Content-Length header if available
                 total_size = int(response.headers.get('content-length', 0))
@@ -426,11 +424,10 @@ class WorkerClient:
                             f.write(chunk)
                             downloaded += len(chunk)
                             
-                            # Report download progress with speed info
+                            # Report download progress with proper percentages
                             current_time = time.time()
                             if total_size > 0 and (current_time - last_report_time > 0.5):  # Update every 500ms
                                 download_percent_actual = (downloaded / total_size) * 100
-                                download_percent = min(3, download_percent_actual * 0.03)  # Map to 0-3% range for overall progress
                                 
                                 # Calculate download speed and ETA
                                 if hasattr(self, '_download_start_time'):
@@ -440,10 +437,10 @@ class WorkerClient:
                                         speed_mbps = speed_bps / (1024 * 1024)
                                         eta_seconds = (total_size - downloaded) / speed_bps if speed_bps > 0 else 0
                                         
-                                        # Format download speed for display (reuse existing "speed" field)
+                                        # Format download speed for display
                                         download_speed = f"{speed_mbps:.1f} MB/s"
                                         
-                                        # Format ETA for display (reuse existing "eta" field)
+                                        # Format ETA for display  
                                         if eta_seconds > 0:
                                             eta_mins = int(eta_seconds // 60)
                                             eta_secs = int(eta_seconds % 60)
@@ -451,19 +448,19 @@ class WorkerClient:
                                         else:
                                             download_eta = "--:--"
                                         
-                                        status_msg = f"Downloading... {download_percent_actual:.1f}%"
+                                        status_msg = f"Downloading {download_percent_actual:.1f}%"
                                     else:
                                         download_speed = "-- MB/s"
                                         download_eta = "--:--"
-                                        status_msg = f"Downloading... {download_percent_actual:.1f}%"
+                                        status_msg = f"Downloading {download_percent_actual:.1f}%"
                                 else:
                                     self._download_start_time = current_time
                                     download_speed = "-- MB/s"
                                     download_eta = "--:--"
-                                    status_msg = f"Downloading... {download_percent_actual:.1f}%"
+                                    status_msg = f"Downloading {download_percent_actual:.1f}%"
                                 
-                                # Report using existing progress fields: speed=download_speed, eta=download_eta
-                                self.report_progress(file_id, download_percent, 
+                                # Report download progress - full 0-100% range for downloading phase
+                                self.report_progress(file_id, download_percent_actual, 
                                                    speed=download_speed,
                                                    eta=download_eta,
                                                    status=status_msg)
@@ -475,18 +472,13 @@ class WorkerClient:
                 if hasattr(self, '_download_start_time'):
                     delattr(self, '_download_start_time')
                 
-                self.report_progress(file_id, 3, status="Download complete", speed=None, eta=None)
-            else:
-                # Shared storage mode - copy from network share
-                logger.info(f"Copying to temp: {file_path} -> {temp_input}")
-                
-                import shutil
-                shutil.copy2(file_path, temp_input)
+                # Download complete - 100% for download phase
+                self.report_progress(file_id, 100, status="Download complete", speed=None, eta=None)
 
             
             # Probe file
             logger.info("Probing file metadata...")
-            self.report_progress(file_id, 5, status="Analyzing file...")
+            self.report_progress(file_id, 0, status="Analyzing file...")
             metadata = MediaProbe.probe_file(temp_input)
             
             if not metadata or not metadata.get('video'):
@@ -537,8 +529,11 @@ class WorkerClient:
             else:
                 logger.info("Audio transcoding enabled - will transcode to Opus")
             
-            # Transcode with progress callback
-            self.report_progress(file_id, 8, status="Starting transcoding...", speed=None, eta=None)
+            # Switch to processing phase when transcoding starts
+            self.current_phase = 'processing'
+            
+            # Transcode with progress callback - start processing phase at 0%
+            self.report_progress(file_id, 0, status="Starting transcoding...", speed=None, eta=None)
             temp_output = self._transcode(temp_input, metadata, settings, file_id, transcoding_settings)
             upload_failed = False  # Track upload status for cleanup
             
@@ -555,19 +550,69 @@ class WorkerClient:
                 self.report_failure(file_id, f"Not worth transcoding: Output would be {abs(savings_percent):.1f}% {'larger' if output_size > original_size else 'smaller'}")
                 return
             
-            # File distribution mode: upload result to master
-            if file_distribution_mode:
+            # Upload result to master
                 logger.info(f"Uploading result to master...")
-                self.report_progress(file_id, 95, status="Uploading result...")
+                
+                # Start uploading phase at 0%
+                self.current_phase = 'uploading'
+                self.report_progress(file_id, 0, status="Uploading result...")
                 
                 upload_success = False
-                with open(temp_output, 'rb') as f:
-                    files = {'file': (temp_output.name, f, 'application/octet-stream')}
-                    response = requests.post(
-                        f"{self.master_url}/api/file/{file_id}/result",
-                        files=files,
-                        timeout=300  # 5 minutes for upload
-                    )
+                file_size = temp_output.stat().st_size
+                upload_start_time = time.time()
+                
+                # Create a custom upload function with progress tracking
+                def upload_with_progress():
+                    # Keep reference to worker client for progress reporting
+                    worker_client = self
+                    
+                    with open(temp_output, 'rb') as f:
+                        # Read file in chunks and track progress
+                        uploaded = 0
+                        chunk_size = 8192  # 8KB chunks
+                        
+                        class ProgressFile:
+                            def __init__(self, file_obj):
+                                self.file_obj = file_obj
+                                self.uploaded = 0
+                            
+                            def read(self, size=-1):
+                                chunk = self.file_obj.read(size)
+                                if chunk:
+                                    self.uploaded += len(chunk)
+                                    progress = min(100, (self.uploaded / file_size) * 100)
+                                    
+                                    # Calculate upload speed and ETA
+                                    elapsed = time.time() - upload_start_time
+                                    if elapsed > 0:
+                                        speed = self.uploaded / elapsed  # bytes per second
+                                        speed_mb = speed / (1024 * 1024)  # MB/s
+                                        
+                                        if speed > 0:
+                                            remaining_bytes = file_size - self.uploaded
+                                            eta_seconds = remaining_bytes / speed
+                                            eta_str = f"{int(eta_seconds//60):02d}:{int(eta_seconds%60):02d}"
+                                        else:
+                                            eta_str = "--:--"
+                                        
+                                        status_msg = f"Uploading: {speed_mb:.1f} MB/s, ETA: {eta_str}"
+                                    else:
+                                        status_msg = "Uploading result..."
+                                    
+                                    worker_client.report_progress(file_id, progress, status=status_msg)
+                                
+                                return chunk
+                        
+                        progress_file = ProgressFile(f)
+                        files = {'file': (temp_output.name, progress_file, 'application/octet-stream')}
+                        
+                        return requests.post(
+                            f"{worker_client.master_url}/api/file/{file_id}/result",
+                            files=files,
+                            timeout=300  # 5 minutes for upload
+                        )
+                
+                response = upload_with_progress()
                 
                 if response.status_code == 200:
                     result = response.json()
@@ -580,8 +625,8 @@ class WorkerClient:
                             logger.debug(f"Removing temp output after successful upload: {temp_output}")
                             temp_output.unlink()
                         
-                        # Report completion - this will retry until successful
-                        self.report_progress(file_id, 100, status="Completed successfully!")
+                        # Report upload completion - 100% for uploading phase
+                        self.report_progress(file_id, 100, status="Upload completed!")
                         completion_success = self.report_completion(file_id, output_size, original_size)
                         
                         if completion_success:
@@ -596,17 +641,6 @@ class WorkerClient:
                 else:
                     upload_failed = True
                     raise Exception(f"Failed to upload result: HTTP {response.status_code}")
-            
-            else:
-                # Shared storage mode: replace file locally
-                self.report_progress(file_id, 95)
-                self._replace_original(file_path, temp_output)
-                
-                # Report completion
-                self.report_progress(file_id, 100)
-                self.report_completion(file_id, output_size, original_size)
-                
-                logger.info(f"Job {file_id} completed successfully ({savings_percent:.1f}% savings)")
 
             
         except Exception as e:
@@ -615,6 +649,7 @@ class WorkerClient:
         
         finally:
             self.current_job = None
+            self.current_phase = 'idle'
             self.current_progress = 0
             self.job_start_time = None
             self.job_completed_but_not_reported = False
@@ -878,7 +913,8 @@ class WorkerClient:
                     time_str = line.split('time=')[1].split()[0]
                     h, m, s = time_str.split(':')
                     current_time = int(h) * 3600 + int(m) * 60 + float(s)
-                    percent = min(95, (current_time / duration * 100))  # Scale to 0-95%
+                    # Processing phase uses full 0-100% range
+                    percent = min(100, (current_time / duration * 100))
                     
                     # Parse speed (fps)
                     if 'speed=' in line:
@@ -892,9 +928,10 @@ class WorkerClient:
                     eta_seconds = int(remaining_time / speed_multiplier) if speed_multiplier > 0 else 0
                     
                     # Report every 2 seconds or 1% change
-                    if time.time() - last_report > 2 or percent - last_report > 1:
+                    current_time_check = time.time()
+                    if current_time_check - last_report > 2 or abs(percent - self.current_progress) > 1:
                         self.report_progress(file_id, percent, speed=current_fps, eta=eta_seconds)
-                        last_report = time.time()
+                        last_report = current_time_check
                 except Exception as e:
                     pass
         
@@ -1065,7 +1102,8 @@ class WorkerClient:
                     time_str = line.split('time=')[1].split()[0]
                     h, m, s = time_str.split(':')
                     current_time = int(h) * 3600 + int(m) * 60 + float(s)
-                    percent = min(95, (current_time / duration * 100))
+                    # Fallback processing phase uses full 0-100% range  
+                    percent = min(100, (current_time / duration * 100))
                     
                     # Parse speed (fps)
                     if 'speed=' in line:
@@ -1131,27 +1169,6 @@ class WorkerClient:
                 logger.warning(f"  - {warning}")
                 
         return debug_info
-    
-    def _replace_original(self, original_path, transcoded_path):
-        """Replace original file with transcoded version"""
-        import shutil
-        
-        # Copy to original location
-        output_path = original_path.parent / transcoded_path.name
-        shutil.copy2(transcoded_path, output_path)
-        
-        # Rename original to .bak
-        backup_path = original_path.with_suffix(original_path.suffix + '.bak')
-        original_path.rename(backup_path)
-        
-        # Rename transcoded to original name
-        output_path.rename(original_path)
-        
-        # Delete backup if not in testing mode
-        if not self.config.is_testing_mode():
-            backup_path.unlink()
-        else:
-            logger.info(f"Testing mode: keeping backup {backup_path}")
     
     def run(self):
         """Main worker loop"""

@@ -23,7 +23,7 @@ High-performance distributed media transcoding system that converts your entire 
 - ✅ **Real-time Monitoring** - Single unified web interface
 - ✅ **Health Monitoring** - Auto-detect and recover from worker failures
 - ✅ **Linear Scaling** - Add workers for proportional speedup
-- ✅ **File Distribution Mode** - HTTP-based transfers (no shared storage needed)
+- ✅ **HTTP File Transfer** - Workers download and upload files via HTTP
 
 ### Advanced Features
 - ✅ **Job Controls** - Cancel, retry, skip, delete operations
@@ -138,17 +138,18 @@ docker compose -f docker-compose.worker-1.yml up -d
 
 **Distributed Mode:**
 
-#### Worker```bash
+#### Master
+```bash
+./start_master.sh
+```
 
-- `FILE_DISTRIBUTION_MODE=true`: Enable file download mode# Master
-
-- `MEDIA_DIRS`: Leave empty for file distribution mode./start_master.sh
-
+#### Worker
 - `SVT_AV1_PRESET`: Encoder preset
+- `PUID/PGID`: User/Group ID for file ownership (default: 1000)
 
-- `PUID/PGID`: User/Group ID for file ownership (default: 1000)# Worker
-
+```bash
 ./start_worker.sh http://MASTER_IP:8090
+```
 
 ## 🎨 HDR Handling
 
@@ -194,27 +195,29 @@ Web interface (http://localhost:8090) provides:
 
 
 
-Web interface (http://localhost:8090) provides:**Environment Variables:**
+Web interface (http://localhost:8090) provides:
 
-- Overall statistics (files processed, savings)```bash
+- Overall statistics (files processed, savings)
+- Worker status and performance  
+- File queue with progress tracking
+- Real-time updates via WebSockets
 
-- Worker status and performance# Application
+## Configuration
 
-- File queue with progress trackingMEDIA_DIRS=/media/Movies,/media/TV        # Media directories (comma-separated)
+### Environment Variables
 
-- Real-time updates via WebSocketsTEMP_DIR=/tmp/av1_transcoding             # Temporary processing directory
-
+```bash
+# Master Configuration
+MEDIA_DIRS=/media/Movies,/media/TV        # Media directories (comma-separated)
+TEMP_DIR=/tmp/av1_transcoding             # Temporary processing directory
 WEB_PORT=8090                              # Web interface port
+TESTING_MODE=true                          # Keep backup files for verification
 
-## File OwnershipTESTING_MODE=true                          # Keep backup files for verification
-
-
-
-Files are created with the user/group specified by `PUID` and `PGID` (default: 1000:1000).# Master Connection (Workers Only)
-
+# Worker Configuration  
 MASTER_URL=http://192.168.1.100:8090      # Master server URL
+MEDIA_DIRS=                               # Empty for file distribution mode
 
-## Temp Directory Cleanup
+# Encoding Settings
 
 # Encoding Settings
 
@@ -230,12 +233,11 @@ IONICE_CLASS=3                             # I/O priority (1-3, 3=idle)
 
 ## Repository
 
-# File Distribution (Optional)
+## Repository
 
-https://github.com/Hack2C/av1-distributed-encoderFILE_DISTRIBUTION_MODE=false               # true=HTTP transfer, false=shared storage
+https://github.com/Hack2C/av1-distributed-encoder
 
-
-# Network Shares (Optional)
+# Network Shares (Optional - for shared file access)
 SMB_HOST=192.168.1.10                      # NAS hostname/IP
 SMB_SHARE=Media                            # Share name
 SMB_USERNAME=user                          # Username
@@ -273,32 +275,12 @@ SMB_VERSION=3.0                            # SMB protocol version
 2. **Queue** - Files added to SQLite database with metadata
 3. **Probe** - FFmpeg analyzes source (codec, resolution, HDR, audio)
 4. **Assign** - Master assigns job to idle worker
-5. **Transfer** (File Distribution Mode) - Master sends file to worker via HTTP
+5. **Download** - Worker downloads file from master via HTTP
 6. **Transcode** - Worker encodes with SVT-AV1 + Opus
-7. **Upload** (File Distribution Mode) - Worker sends result back to master
+7. **Upload** - Worker uploads result back to master
 8. **Verify** - Check quality and size savings (minimum 5%)
 9. **Replace** - Atomic file replacement with backup
 10. **Cleanup** - Delete backup if not in testing mode
-
-### Operating Modes
-
-#### Shared Storage Mode (Default)
-```yaml
-FILE_DISTRIBUTION_MODE=false
-```
-- All machines access files via network shares (SMB/NFS)
-- Faster for local networks
-- Requires shared storage setup
-- Recommended for LAN deployments
-
-#### File Distribution Mode
-```yaml
-FILE_DISTRIBUTION_MODE=true
-```
-- Master transfers files to workers via HTTP
-- No shared storage needed
-- Works across different networks
-- Ideal for remote workers or simplified setup
 
 ## 🎨 Web Interface
 
@@ -400,7 +382,7 @@ services:
       - SVT_AV1_PRESET=8
 ```
 
-**docker-compose.worker.yml** - Worker with shared storage
+**docker-compose.worker.yml** - Distributed worker
 ```yaml
 services:
   worker:
@@ -415,15 +397,13 @@ services:
       - SMB_SHARE=Media
 ```
 
-**docker-compose.filedist-test.yml** - File distribution test
+**docker-compose.test.yml** - Distributed transcoding test
 ```yaml
 services:
   master:
-    # Master has access to media
+    # Master has access to media files
   worker1:
-    # Worker has NO media access
-    environment:
-      - FILE_DISTRIBUTION_MODE=true
+    # Worker downloads files from master
 ```
 
 ## 📊 Performance
@@ -672,6 +652,14 @@ MIT License - See LICENSE file for details
 
 ## 📋 Changelog
 
+### Version 2.2.0 (November 2025)
+- **🗂️ Architecture Simplification**: Removed shared storage mode - now uses only file distribution for simpler deployment
+- **🔥 Three-Phase Progress System**: Distinct 0-100% progress tracking for Downloading/Processing/Uploading phases
+- **📊 Enhanced Telemetry**: Real-time speed (MB/s) for download/upload phases, FPS for processing phase
+- **🎨 Visual Progress Distinction**: Color-coded progress bars (Blue=Download, Yellow=Processing, Purple=Upload)
+- **📋 Streamlined Configuration**: Removed FILE_DISTRIBUTION_MODE - workers always download files from master
+- **🧹 Codebase Cleanup**: Eliminated 200+ lines of shared storage code, simplified Docker configurations
+
 ### Version 2.1.1 (November 2025)
 - **📊 Enhanced Statistics Dashboard**: Added "Space Saved %" and "Est Total Savings" panels for better progress visualization
 - **📱 Mobile UI Improvements**: Responsive header layout with improved button placement and version display
@@ -694,5 +682,5 @@ MIT License - See LICENSE file for details
 
 ---
 
-**Version:** 2.1.1  
+**Version:** 2.2.0  
 **Last Updated:** November 2025
