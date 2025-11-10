@@ -3,7 +3,7 @@
 Worker Client - Connects to master server and processes transcoding jobs
 """
 
-__version__ = "2.2.10"
+__version__ = "2.2.12"
 
 import os
 import sys
@@ -17,6 +17,7 @@ import psutil
 from datetime import datetime
 from pathlib import Path
 from datetime import datetime
+from tqdm import tqdm
 
 # Add lib directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -416,64 +417,66 @@ class WorkerClient:
             
             # Get file size from Content-Length header if available
             total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
             
-            # Save streamed file with progress tracking
+            # Use tqdm for efficient download with built-in progress tracking
+            download_start_time = time.time()
             last_report_time = time.time()
+            
+            # Custom tqdm progress bar that integrates with our reporting
+            class DownloadProgress(tqdm):
+                def __init__(self, file_id, report_func, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    self.file_id = file_id
+                    self.report_func = report_func
+                    self.last_report = 0
+                    
+                def update_download_progress(self, chunk_size):
+                    self.update(chunk_size)
+                    # Report to master server every 2 seconds to avoid overhead
+                    if time.time() - self.last_report > 2.0:
+                        if self.total > 0:
+                            percent = (self.n / self.total) * 100
+                            speed_mbps = self.format_dict.get('rate', 0) / (1024 * 1024) if self.format_dict.get('rate') else 0
+                            
+                            # Get ETA from tqdm's built-in calculation
+                            eta_seconds = (self.total - self.n) / self.format_dict.get('rate', 1) if self.format_dict.get('rate', 0) > 0 else 0
+                            eta_mins = int(eta_seconds // 60)
+                            eta_secs = int(eta_seconds % 60)
+                            eta_str = f"{eta_mins:02d}:{eta_secs:02d}" if eta_seconds > 0 else "--:--"
+                            
+                            self.report_func(self.file_id, percent, 
+                                           speed=f"{speed_mbps:.1f} MB/s",
+                                           eta=eta_str,
+                                           status=f"Downloading {percent:.1f}%")
+                            self.last_report = time.time()
+            
+            # Create progress bar
+            progress = DownloadProgress(
+                file_id=file_id,
+                report_func=self.report_progress,
+                total=total_size,
+                unit='B',
+                unit_scale=True,
+                desc="Download",
+                disable=True  # Don't show console output, we handle reporting
+            )
+            
             with open(temp_input, 'wb') as f:
-                # Use larger chunk size for better performance (1MB chunks)
+                # Optimal chunk size for network transfers (1MB)
                 for chunk in response.iter_content(chunk_size=1024*1024):
                     if chunk:
                         f.write(chunk)
-                        downloaded += len(chunk)
-                        
-                        # Report download progress with proper percentages
-                        current_time = time.time()
-                        if total_size > 0 and (current_time - last_report_time > 1.0):  # Update every 1 second
-                            download_percent_actual = (downloaded / total_size) * 100
-                            
-                            # Calculate download speed and ETA
-                            if hasattr(self, '_download_start_time'):
-                                elapsed = current_time - self._download_start_time
-                                if elapsed > 0:
-                                    speed_bps = downloaded / elapsed
-                                    speed_mbps = speed_bps / (1024 * 1024)
-                                    eta_seconds = (total_size - downloaded) / speed_bps if speed_bps > 0 else 0
-                                    
-                                    # Format download speed for display
-                                    download_speed = f"{speed_mbps:.1f} MB/s"
-                                    
-                                    # Format ETA for display  
-                                    if eta_seconds > 0:
-                                        eta_mins = int(eta_seconds // 60)
-                                        eta_secs = int(eta_seconds % 60)
-                                        download_eta = f"{eta_mins:02d}:{eta_secs:02d}"
-                                    else:
-                                        download_eta = "--:--"
-                                    
-                                    status_msg = f"Downloading {download_percent_actual:.1f}%"
-                                else:
-                                    download_speed = "-- MB/s"
-                                    download_eta = "--:--"
-                                    status_msg = f"Downloading {download_percent_actual:.1f}%"
-                            else:
-                                self._download_start_time = current_time
-                                download_speed = "-- MB/s"
-                                download_eta = "--:--"
-                                status_msg = f"Downloading {download_percent_actual:.1f}%"
-                            
-                            # Report download progress - full 0-100% range for downloading phase
-                            self.report_progress(file_id, download_percent_actual, 
-                                               speed=download_speed,
-                                               eta=download_eta,
-                                               status=status_msg)
-                            last_report_time = current_time
+                        progress.update_download_progress(len(chunk))
+            
+            progress.close()
+            
+            # Log final download statistics
+            total_time = time.time() - download_start_time
+            if total_time > 0 and total_size > 0:
+                final_speed = (total_size / total_time) / (1024 * 1024)
+                logger.info(f"Download completed: {total_size / (1024*1024):.1f} MB in {total_time:.1f}s ({final_speed:.1f} MB/s)")
             
             logger.info(f"File downloaded successfully: {temp_input}")
-            
-            # Clean up download tracking
-            if hasattr(self, '_download_start_time'):
-                delattr(self, '_download_start_time')
             
             # Download complete - 100% for download phase
             self.report_progress(file_id, 100, status="Download complete", speed=None, eta=None)
