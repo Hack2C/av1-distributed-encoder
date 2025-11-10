@@ -411,69 +411,69 @@ class WorkerClient:
             
             if response.status_code != 200:
                 raise Exception(f"Failed to download file: HTTP {response.status_code}")
-                
-                # Get file size from Content-Length header if available
-                total_size = int(response.headers.get('content-length', 0))
-                downloaded = 0
-                
-                # Save streamed file with progress tracking
-                last_report_time = time.time()
-                with open(temp_input, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
+            
+            # Get file size from Content-Length header if available
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            
+            # Save streamed file with progress tracking
+            last_report_time = time.time()
+            with open(temp_input, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        
+                        # Report download progress with proper percentages
+                        current_time = time.time()
+                        if total_size > 0 and (current_time - last_report_time > 0.5):  # Update every 500ms
+                            download_percent_actual = (downloaded / total_size) * 100
                             
-                            # Report download progress with proper percentages
-                            current_time = time.time()
-                            if total_size > 0 and (current_time - last_report_time > 0.5):  # Update every 500ms
-                                download_percent_actual = (downloaded / total_size) * 100
-                                
-                                # Calculate download speed and ETA
-                                if hasattr(self, '_download_start_time'):
-                                    elapsed = current_time - self._download_start_time
-                                    if elapsed > 0:
-                                        speed_bps = downloaded / elapsed
-                                        speed_mbps = speed_bps / (1024 * 1024)
-                                        eta_seconds = (total_size - downloaded) / speed_bps if speed_bps > 0 else 0
-                                        
-                                        # Format download speed for display
-                                        download_speed = f"{speed_mbps:.1f} MB/s"
-                                        
-                                        # Format ETA for display  
-                                        if eta_seconds > 0:
-                                            eta_mins = int(eta_seconds // 60)
-                                            eta_secs = int(eta_seconds % 60)
-                                            download_eta = f"{eta_mins:02d}:{eta_secs:02d}"
-                                        else:
-                                            download_eta = "--:--"
-                                        
-                                        status_msg = f"Downloading {download_percent_actual:.1f}%"
+                            # Calculate download speed and ETA
+                            if hasattr(self, '_download_start_time'):
+                                elapsed = current_time - self._download_start_time
+                                if elapsed > 0:
+                                    speed_bps = downloaded / elapsed
+                                    speed_mbps = speed_bps / (1024 * 1024)
+                                    eta_seconds = (total_size - downloaded) / speed_bps if speed_bps > 0 else 0
+                                    
+                                    # Format download speed for display
+                                    download_speed = f"{speed_mbps:.1f} MB/s"
+                                    
+                                    # Format ETA for display  
+                                    if eta_seconds > 0:
+                                        eta_mins = int(eta_seconds // 60)
+                                        eta_secs = int(eta_seconds % 60)
+                                        download_eta = f"{eta_mins:02d}:{eta_secs:02d}"
                                     else:
-                                        download_speed = "-- MB/s"
                                         download_eta = "--:--"
-                                        status_msg = f"Downloading {download_percent_actual:.1f}%"
+                                    
+                                    status_msg = f"Downloading {download_percent_actual:.1f}%"
                                 else:
-                                    self._download_start_time = current_time
                                     download_speed = "-- MB/s"
                                     download_eta = "--:--"
                                     status_msg = f"Downloading {download_percent_actual:.1f}%"
-                                
-                                # Report download progress - full 0-100% range for downloading phase
-                                self.report_progress(file_id, download_percent_actual, 
-                                                   speed=download_speed,
-                                                   eta=download_eta,
-                                                   status=status_msg)
-                                last_report_time = current_time
-                
-                logger.info(f"File downloaded successfully: {temp_input}")
-                
-                # Clean up download tracking
-                if hasattr(self, '_download_start_time'):
-                    delattr(self, '_download_start_time')
-                
-                # Download complete - 100% for download phase
-                self.report_progress(file_id, 100, status="Download complete", speed=None, eta=None)
+                            else:
+                                self._download_start_time = current_time
+                                download_speed = "-- MB/s"
+                                download_eta = "--:--"
+                                status_msg = f"Downloading {download_percent_actual:.1f}%"
+                            
+                            # Report download progress - full 0-100% range for downloading phase
+                            self.report_progress(file_id, download_percent_actual, 
+                                               speed=download_speed,
+                                               eta=download_eta,
+                                               status=status_msg)
+                            last_report_time = current_time
+            
+            logger.info(f"File downloaded successfully: {temp_input}")
+            
+            # Clean up download tracking
+            if hasattr(self, '_download_start_time'):
+                delattr(self, '_download_start_time')
+            
+            # Download complete - 100% for download phase
+            self.report_progress(file_id, 100, status="Download complete", speed=None, eta=None)
 
             
             # Probe file
