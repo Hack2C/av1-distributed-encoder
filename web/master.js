@@ -11,6 +11,7 @@ let currentSearch = '';
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     initializeEventListeners();
+    fetchVersion();
     fetchInitialData();
     connectWebSocket();
 });
@@ -30,6 +31,19 @@ function initializeEventListeners() {
 }
 
 // API Calls
+async function fetchVersion() {
+    try {
+        const response = await fetch('/version');
+        const data = await response.json();
+        if (data.version) {
+            document.querySelector('.version-info').textContent = `v${data.version}`;
+        }
+    } catch (error) {
+        console.warn('Could not fetch version:', error);
+        // Keep the static version as fallback
+    }
+}
+
 async function fetchInitialData() {
     try {
         const [statusRes, filesRes] = await Promise.all([
@@ -127,6 +141,14 @@ function updateDashboard() {
     const savingsGB = ((statistics.total_savings_bytes || 0) / (1024 * 1024 * 1024)).toFixed(2);
     document.getElementById('totalSavings').textContent = savingsGB + ' GB';
     
+    // Update space saved percentage
+    const savingsPercent = (statistics.total_savings_percent || 0).toFixed(1);
+    document.getElementById('savingsPercent').textContent = savingsPercent + '%';
+    
+    // Update estimated total savings
+    const estimatedSavingsGB = ((statistics.estimated_total_savings || 0) / (1024 * 1024 * 1024)).toFixed(2);
+    document.getElementById('estimatedSavings').textContent = estimatedSavingsGB + ' GB';
+    
     // Calculate estimated time
     const estimatedTime = calculateEstimatedTime();
     document.getElementById('estimatedTime').textContent = estimatedTime;
@@ -198,8 +220,9 @@ function updateWorkers() {
         
         let currentFileInfo = '';
         if (worker.status === 'processing' && worker.current_file) {
-            const eta = worker.current_eta ? formatDuration(worker.current_eta) : '--:--';
-            const speed = worker.current_speed ? `${worker.current_speed.toFixed(1)} fps` : '--';
+            const eta = worker.current_eta ? (typeof worker.current_eta === 'string' ? worker.current_eta : formatDuration(worker.current_eta)) : '--:--';
+            const speed = worker.current_speed ? 
+                (typeof worker.current_speed === 'string' ? worker.current_speed : `${worker.current_speed.toFixed(1)} fps`) : '--';
             
             currentFileInfo = `
                 <div class="worker-current-file">
@@ -306,8 +329,10 @@ function renderFiles(files) {
         let progressBar = '';
         if (file.status === 'processing') {
             const progress = file.progress_percent || 0;
-            const speed = file.processing_speed_fps ? `${file.processing_speed_fps.toFixed(1)} fps` : '--';
-            const eta = file.time_remaining_seconds ? formatDuration(file.time_remaining_seconds) : '--:--';
+            const speed = file.processing_speed_fps ? 
+                (typeof file.processing_speed_fps === 'string' ? file.processing_speed_fps : `${file.processing_speed_fps.toFixed(1)} fps`) : '--';
+            const eta = file.time_remaining_seconds ? 
+                (typeof file.time_remaining_seconds === 'string' ? file.time_remaining_seconds : formatDuration(file.time_remaining_seconds)) : '--:--';
             const statusMsg = file.status_message || 'Processing...';
             
             progressBar = `

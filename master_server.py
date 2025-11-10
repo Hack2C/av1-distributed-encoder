@@ -3,7 +3,7 @@
 Master Server - Coordinates distributed transcoding across multiple workers
 """
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 import os
 import sys
@@ -82,6 +82,11 @@ def index():
 def old_ui():
     """Serve old web interface"""
     return app.send_static_file('master.html')
+
+@app.route('/version')
+def version():
+    """Get server version"""
+    return jsonify({'version': __version__})
 
 @app.route('/api/status')
 def api_status():

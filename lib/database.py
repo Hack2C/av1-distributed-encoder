@@ -317,18 +317,30 @@ class Database:
                     updated_at = CURRENT_TIMESTAMP
             ''')
             
-            # Calculate average savings percentage
+            # Calculate actual savings percentage and average for estimation
             cursor.execute('''
-                SELECT AVG(savings_percent) FROM files WHERE status = 'completed'
+                SELECT 
+                    COALESCE(SUM(size_bytes), 0) as completed_original_size,
+                    AVG(savings_percent) as avg_savings_percent
+                FROM files WHERE status = 'completed'
             ''')
-            avg_savings = cursor.fetchone()[0] or 0
+            result = cursor.fetchone()
+            completed_original_size = result[0] or 0
+            avg_savings_percent = result[1] or 0
+            
+            # Calculate actual space saved percentage (what's been saved vs what was processed)
+            actual_savings_percent = 0
+            if completed_original_size > 0:
+                cursor.execute('SELECT COALESCE(SUM(savings_bytes), 0) FROM files WHERE status = "completed"')
+                actual_savings_bytes = cursor.fetchone()[0] or 0
+                actual_savings_percent = (actual_savings_bytes / completed_original_size) * 100
             
             cursor.execute('''
                 UPDATE statistics SET 
                     total_savings_percent = ?,
                     estimated_total_savings = CAST(total_original_size * ? / 100.0 AS INTEGER),
                     estimated_final_size = CAST(total_original_size * (100.0 - ?) / 100.0 AS INTEGER)
-            ''', (avg_savings, avg_savings, avg_savings))
+            ''', (actual_savings_percent, avg_savings_percent, avg_savings_percent))
             
             conn.commit()
             

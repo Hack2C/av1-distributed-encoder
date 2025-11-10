@@ -8,6 +8,9 @@
 </head>
 <body>
     <div class="container">
+        <!-- Version -->
+        <div class="version-info">v2.1.1</div>
+
         <!-- Header -->
         <header>
             <h1>🎬 AV1 Transcoding Server</h1>
@@ -59,10 +62,24 @@
                 </div>
             </div>
             <div class="stat-card">
+                <div class="stat-icon">📊</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="savingsPercent">0%</div>
+                    <div class="stat-label">Space Saved %</div>
+                </div>
+            </div>
+            <div class="stat-card">
                 <div class="stat-icon">⏱️</div>
                 <div class="stat-content">
                     <div class="stat-value" id="estimatedTime">--:--</div>
                     <div class="stat-label">Est. Remaining</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🎯</div>
+                <div class="stat-content">
+                    <div class="stat-value" id="estimatedSavings">0 GB</div>
+                    <div class="stat-label">Est Total Savings</div>
                 </div>
             </div>
         </section>

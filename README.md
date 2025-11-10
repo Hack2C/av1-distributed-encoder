@@ -672,6 +672,13 @@ MIT License - See LICENSE file for details
 
 ## 📋 Changelog
 
+### Version 2.1.1 (November 2025)
+- **📊 Enhanced Statistics Dashboard**: Added "Space Saved %" and "Est Total Savings" panels for better progress visualization
+- **📱 Mobile UI Improvements**: Responsive header layout with improved button placement and version display
+- **📥 Download Progress Bar**: Real-time download progress with speed (MB/s) and ETA display during file distribution
+- **🎯 Dynamic Progress Display**: Existing progress bars now show download metrics during download phase, transcoding metrics during encoding
+- **🔧 Smart Progress Transitions**: Seamless switching between download speed/ETA and transcoding FPS/ETA
+
 ### Version 2.1.0 (November 2025)
 - **🎛️ Centralized Audio Configuration**: `SKIP_AUDIO_TRANSCODE` now configured on master and distributed to all workers
 - **🎵 Enhanced Audio Handling**: Improved support for complex multi-channel audio layouts with optional transcoding bypass
@@ -687,5 +694,5 @@ MIT License - See LICENSE file for details
 
 ---
 
-**Version:** 2.1.0  
+**Version:** 2.1.1  
 **Last Updated:** November 2025
